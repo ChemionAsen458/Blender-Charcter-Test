@@ -1,6 +1,8 @@
 # Rigging guide
 
-99 bones, organised into seven bone collections. Open the Armature tab and
+![Expressions](images/expressions.png)
+
+101 bones, organised into seven bone collections. Open the Armature tab and
 toggle collections to show only what you need: `Controls`, `IK`, `FK`,
 `Face`, `Shadow`, `Mechanism`, `Deform` (the last two are hidden by
 default).
@@ -158,7 +160,11 @@ parameter, so topology is identical by construction rather than by hand.
 
 ## Shadow rig
 
+![Shadow rig](images/shadow_rig.png)
+
 Cel shading turns shadow into a posed element. All of it lives on bones.
+Every frame above is the same model in the same pose; only `SHD-ctrl` and
+`SHD-key` differ.
 
 ### Light direction
 

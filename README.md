@@ -28,6 +28,18 @@ than by re-modelling.
 
 ![Turnaround](docs/images/turnaround.png)
 
+The face rig, driven entirely by the slider bones and face properties —
+neutral, blink, angry, surprised, smile, looking left:
+
+![Expressions](docs/images/expressions.png)
+
+The shadow rig sweeping its own controls. Same model, same pose; only
+`SHD-ctrl` and `SHD-key` change between frames — default, hard key, low
+key from behind, warm and soft, and the fringe shadow dropped down the
+face:
+
+![Shadow rig](docs/images/shadow_rig.png)
+
 ---
 
 ## What you get
@@ -66,7 +78,7 @@ their labels so you can repaint by hand without guesswork. See
 
 ### The rig
 
-99 bones in seven bone collections. Full detail in
+101 bones in seven bone collections. Full detail in
 [docs/RIGGING.md](docs/RIGGING.md); the short version:
 
 * **Body** — `root` → `torso` → spine → chest → neck → head, with
