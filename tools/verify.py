@@ -333,12 +333,25 @@ def check_face_rig(res, rig, objects):
     _reset(rig)
 
     jaw_before = _centroid(objects["CHR-Mouth"])
+    body_before = _evaluated_verts(objects["CHR-Body"])
     rig.pose.bones["jaw"].rotation_euler = (math.radians(20), 0, 0)
     _deps().update()
     jaw_after = _centroid(objects["CHR-Mouth"])
     res.check("face: jaw opens the mouth",
               (jaw_after - jaw_before).length > 0.002,
               f"mouth moved {(jaw_after - jaw_before).length * 1000:.1f} mm")
+
+    # ... and it must not drag the rest of the face with it.  Bone heat
+    # diffuses through the volume, so a bone buried in the skull reaches
+    # much further across the surface than it should: unbounded, the jaw
+    # pulled the eye sockets down and an open mouth closed the eyes.
+    from character import config as C
+    body_after = _evaluated_verts(objects["CHR-Body"])
+    strays = [b for a, b in zip(body_after, body_before)
+              if (a - b).length > 0.004 and b.z > C.Z["eye"]]
+    res.check("face: the jaw does not move the eyes", not strays,
+              f"{len(strays)} verts above eye level moved" if strays
+              else "nothing above eye level moves")
     _reset(rig)
 
 

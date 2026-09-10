@@ -192,6 +192,10 @@ def build_rig(ch):
         obj = ch.objects.get(key)
         if obj is not None:
             methods[key] = SKIN.bind(obj, rig, segments)
+    # heat gives the jaw a reach it has no business having -- see limit_group
+    body_obj = ch.objects.get("body")
+    if body_obj is not None:
+        SKIN.limit_group(body_obj, "jaw", SKIN.jaw_mask)
     for key, bone in RIGID_BINDING.items():
         obj = ch.objects.get(key)
         if obj is not None:

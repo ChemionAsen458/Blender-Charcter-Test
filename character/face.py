@@ -30,14 +30,17 @@ NV = 7           # through the vertical span
 EYE_HALF_W = 0.0315
 EYE_HALF_TOP = 0.0205
 EYE_HALF_BOT = 0.0150
-# Layering matters more than it looks: the eyelid's free edge has to clear
-# the eye's corneal bulge, or a blink slides the lid *behind* the eye and
-# the eye stays open however far the shape key is driven.
-EYE_OFFSET = 0.0012          # eye shell sits just proud of the socket
-EYE_BULGE = 0.0028           # corneal bulge, so the iris catches light
+# Layering matters more than it looks.  The eyelid's free edge has to clear
+# the eye's corneal bulge or a blink slides the lid *behind* the eye, and
+# it stays open however far the shape key is driven.  But clearance bought
+# by lifting the lid turns it into a shelf standing off the face -- so the
+# eye is recessed into its socket instead, and the lid only has to rise a
+# couple of millimetres.
+EYE_OFFSET = -0.0014         # eye shell sits down in the socket
+EYE_BULGE = 0.0026           # corneal bulge, so the iris catches light
 EYE_MAX_OFFSET = EYE_OFFSET + EYE_BULGE
-LID_OFFSET = 0.0026          # lids ride outside the eye shell
-LID_EDGE_LIFT = 0.0042       # extra lift at the free edge, clearing the eye
+LID_OFFSET = 0.0016          # lids ride outside the eye shell
+LID_EDGE_LIFT = 0.0026       # extra lift at the free edge, clearing the eye
 LID_REST_OPEN = 0.965        # 1 = fully open, 0 = closed onto the lower lid
 
 
@@ -181,7 +184,7 @@ def build_eyelid(sampler, side="L", upper=True):
     shapes = {
         "blink": _lid_verts(sampler, cx, eye["z"], closed, upper),
         "wide": _lid_verts(sampler, cx, eye["z"],
-                           1.02 if upper else -0.10, upper),
+                           1.00 if upper else -0.06, upper),
         "squint": _lid_verts(sampler, cx, eye["z"],
                              0.52 if upper else 0.24, upper, squeeze=0.0004),
     }

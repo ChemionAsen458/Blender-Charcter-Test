@@ -152,6 +152,52 @@ def auto_weight(obj, rig, segments=None, max_influences=4, power=3.0,
     return groups
 
 
+def limit_group(obj, group_name, mask, renormalise=True):
+    """Scale one vertex group by a positional mask and renormalise.
+
+    Bone heat diffuses through the *volume*, so a bone buried inside a
+    closed shape reaches much further across the surface than it should:
+    left alone, `jaw` picks up weight above the eyes, and opening the mouth
+    drags the eye sockets down with it.  This trims a group back to the
+    region it belongs to and redistributes what it gave up to whichever
+    bones the vertex already had.
+
+    `mask(co)` returns 0-1 for a vertex's rest position.
+    """
+    group = obj.vertex_groups.get(group_name)
+    if group is None:
+        return 0
+    trimmed = 0
+    for v in obj.data.vertices:
+        entry = next((g for g in v.groups if g.group == group.index), None)
+        if entry is None or entry.weight <= 0.0:
+            continue
+        keep = max(0.0, min(1.0, mask(v.co)))
+        if keep >= 1.0:
+            continue
+        released = entry.weight * (1.0 - keep)
+        group.add([v.index], entry.weight * keep, 'REPLACE')
+        trimmed += 1
+        if not renormalise or released <= 0.0:
+            continue
+        others = [(obj.vertex_groups[g.group], g.weight) for g in v.groups
+                  if g.group != group.index and g.weight > 0.0]
+        total = sum(w for _, w in others)
+        if total <= 0.0:
+            continue
+        for other, weight in others:
+            other.add([v.index], weight + released * weight / total, 'REPLACE')
+    return trimmed
+
+
+def jaw_mask(co, full_below=None, zero_above=None):
+    """Where the jaw bone is allowed to deform: the chin, not the face."""
+    from . import config as C
+    full_below = C.MOUTH["z"] if full_below is None else full_below
+    zero_above = full_below + 0.034 if zero_above is None else zero_above
+    return 1.0 - _smoothstep(full_below, zero_above, co.z)
+
+
 def rigid_weight(obj, bone_name):
     """Bind every vertex of `obj` fully to one bone."""
     obj.vertex_groups.clear()

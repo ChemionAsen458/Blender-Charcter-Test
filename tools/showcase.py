@@ -83,8 +83,8 @@ EXPRESSIONS = {
                              "mouth_frown": 0.7},
               "brow.L": {"loc": (0, 0, -0.008)},
               "brow.R": {"loc": (0, 0, -0.008)}},
-    "surprised": {"brow.L": {"loc": (0, 0, 0.013)},
-                  "brow.R": {"loc": (0, 0, 0.013)},
+    "surprised": {"brow.L": {"loc": (0, 0, 0.010)},
+                  "brow.R": {"loc": (0, 0, 0.010)},
                   "lid_up.L": {"loc": (0, 0, 0.010)},
                   "lid_up.R": {"loc": (0, 0, 0.010)},
                   "mouth": {"loc": (0, 0, -0.010)},
@@ -160,18 +160,23 @@ def render_expressions(out_dir, rig, size=520, samples=40):
                                  os.path.join(out_dir, "expressions.png"))
 
 
-def render_shadow_looks(out_dir, rig, size=520, samples=40):
+def render_shadow_looks(out_dir, rig, size=440, samples=40):
+    """One three-quarter view per look, framed on the whole figure.
+
+    The point of the sheet is that one control changes the shading
+    everywhere at once, so it has to show enough of the character for that
+    to be visible.
+    """
     paths = []
     for name, pose in SHADOW_LOOKS.items():
         _reset(rig)
         _apply(rig, pose)
-        preview.setup_render(width=size, height=int(size * 1.25),
-                             samples=samples)
+        height = int(size * 1.8)
+        preview.setup_render(width=size, height=height, samples=samples)
         p = preview.render_views(out_dir, views=("three_q",),
                                  prefix=f"shadow_{name}", width=size,
-                                 height=int(size * 1.25),
-                                 focus=Vector((0, 0, 1.36)),
-                                 ortho_scale=0.62, objects=_meshes(),
+                                 height=height, focus=Vector((0, 0, 0.90)),
+                                 ortho_scale=1.95, objects=_meshes(),
                                  samples=samples)
         paths.extend(p)
     _reset(rig)
