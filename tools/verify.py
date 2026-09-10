@@ -288,6 +288,27 @@ def check_face_rig(res, rig, objects):
     after = _centroid(lid)
     res.check("face: eyelid geometry moves", (after - before).length > 0.002,
               f"lid centroid moved {(after - before).length * 1000:.1f} mm")
+
+    # ... and it must move geometry *in front of the eye*.  A shape key at
+    # 1.0 and a lid that slides behind the corneal bulge look identical in
+    # the outliner and completely different in the render.
+    eye = objects.get("CHR-Eye-L")
+    if eye is not None and lid is not None:
+        lid_pts = _evaluated_verts(lid)
+        eye_pts = _evaluated_verts(eye)
+        centre = _centroid(eye)
+        near_lid = [p for p in lid_pts
+                    if abs(p.x - centre.x) < 0.012 and abs(p.z - centre.z) < 0.012]
+        near_eye = [p for p in eye_pts
+                    if abs(p.x - centre.x) < 0.012 and abs(p.z - centre.z) < 0.012]
+        if near_lid and near_eye:
+            # the character faces -Y, so "in front" is more negative
+            gap = min(p.y for p in near_eye) - min(p.y for p in near_lid)
+            res.check("face: a blink covers the eye", gap > 0.0005,
+                      f"lid is {gap * 1000:+.1f} mm in front of the eye")
+        else:
+            res.check("face: a blink covers the eye", False,
+                      "no overlapping geometry to compare")
     _reset(rig)
 
     # brow scowl via the shape-key property

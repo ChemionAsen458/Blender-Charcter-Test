@@ -30,9 +30,14 @@ NV = 7           # through the vertical span
 EYE_HALF_W = 0.0315
 EYE_HALF_TOP = 0.0205
 EYE_HALF_BOT = 0.0150
+# Layering matters more than it looks: the eyelid's free edge has to clear
+# the eye's corneal bulge, or a blink slides the lid *behind* the eye and
+# the eye stays open however far the shape key is driven.
 EYE_OFFSET = 0.0012          # eye shell sits just proud of the socket
-EYE_BULGE = 0.0055           # corneal bulge, so the iris catches light
+EYE_BULGE = 0.0028           # corneal bulge, so the iris catches light
+EYE_MAX_OFFSET = EYE_OFFSET + EYE_BULGE
 LID_OFFSET = 0.0026          # lids ride outside the eye shell
+LID_EDGE_LIFT = 0.0042       # extra lift at the free edge, clearing the eye
 LID_REST_OPEN = 0.965        # 1 = fully open, 0 = closed onto the lower lid
 
 
@@ -147,10 +152,14 @@ def _lid_verts(sampler, cx, cz, open_t, upper=True, squeeze=0.0):
             t = i / (NV - 1)
             v = lerp(outer, edge, t)
             # the free edge rides further out so it clears the cornea
-            off = LID_OFFSET + 0.0022 * (t ** 2) + squeeze * (t ** 2)
+            off = LID_OFFSET + LID_EDGE_LIFT * (t ** 2) + squeeze * (t ** 2)
             width = EYE_HALF_W * (1.0 + 0.045 * (1.0 - t))
             verts.append(sampler.offset_point(cx + u * width, cz + v, off))
     return verts
+
+
+assert LID_OFFSET + LID_EDGE_LIFT > EYE_MAX_OFFSET + 0.0010, \
+    "the eyelid's free edge must clear the eye's corneal bulge"
 
 
 def build_eyelid(sampler, side="L", upper=True):
