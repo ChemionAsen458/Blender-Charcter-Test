@@ -31,9 +31,10 @@ SIDED_PREFIXES = ("thigh", "shin", "foot", "toe", "shoulder", "upper_arm",
 # vertices from their neighbours.
 BONE_REACH = {
     "hips": 0.22, "spine": 0.24, "spine.001": 0.24, "chest": 0.26,
-    "neck": 0.13, "head": 0.20,
-    "shoulder": 0.14, "upper_arm": 0.13, "forearm": 0.11, "hand": 0.07,
-    "thigh": 0.17, "shin": 0.15, "foot": 0.11, "toe": 0.08,
+    "neck": 0.13, "head": 0.20, "jaw": 0.055,
+    "shoulder": 0.13, "upper_arm": 0.085, "forearm": 0.065, "hand": 0.055,
+    "thigh": 0.14, "shin": 0.11, "foot": 0.09, "toe": 0.06,
+    "eye": 0.02,
 }
 FINGER_REACH = 0.022
 DEFAULT_REACH = 0.12
@@ -89,15 +90,24 @@ def collect_bone_segments(rig):
 
 
 def auto_weight(obj, rig, segments=None, max_influences=4, power=3.0,
-                side_band=0.030):
-    """Envelope-style skinning for the body and the clothing."""
+                side_band=0.030, indices=None):
+    """Envelope-style skinning for the body and the clothing.
+
+    Pass `indices` to weight only some vertices, leaving the rest alone --
+    that is how islands the heat solver could not reach get filled in
+    without discarding the good weights it produced everywhere else.
+    """
     segments = segments or collect_bone_segments(rig)
-    obj.vertex_groups.clear()
-    groups = {name: obj.vertex_groups.new(name=name)
+    if indices is None:
+        obj.vertex_groups.clear()
+    groups = {name: (obj.vertex_groups.get(name)
+                     or obj.vertex_groups.new(name=name))
               for (name, _, _, _, _) in segments}
 
     mw = obj.matrix_world
-    for v in obj.data.vertices:
+    todo = (obj.data.vertices if indices is None
+            else [obj.data.vertices[i] for i in indices])
+    for v in todo:
         p = mw @ v.co
         scored = []
         for (name, head, tail, reach, side) in segments:
@@ -143,13 +153,75 @@ def blend_weight(obj, weights):
         obj.vertex_groups.new(name=name).add(idx, w, 'REPLACE')
 
 
-def bind(obj, rig, segments=None, rigid=None):
+# Bones that must not take part in automatic weighting of the body or the
+# clothing.  The eyeballs sit *inside* the skull, so any distance-based
+# scheme hands them a patch of face; the face shells are bound rigidly
+# instead and never need a weight painted on the skin.
+AUTO_WEIGHT_EXCLUDE = ("eye.L", "eye.R")
+
+
+def heat_weight(obj, rig, exclude=AUTO_WEIGHT_EXCLUDE):
+    """Bind with Blender's bone-heat solver.
+
+    Distance-to-bone weighting cannot tell that an arm hanging beside the
+    body is *not* attached to the lower back -- it just sees a bone 13 cm
+    away and hands it a quarter of the vertex.  Bone heat diffuses across
+    the surface instead, so influence has to travel through the mesh, and
+    the arm stops stealing the torso.
+
+    Returns True if the solver succeeded.
+    """
+    stashed = []
+    for name in exclude:
+        bone = rig.data.bones.get(name)
+        if bone is not None and bone.use_deform:
+            bone.use_deform = False
+            stashed.append(bone)
+    try:
+        obj.vertex_groups.clear()
+        for mod in [m for m in obj.modifiers if m.type == 'ARMATURE']:
+            obj.modifiers.remove(mod)
+        view_layer = bpy.context.view_layer
+        for o in view_layer.objects:
+            o.select_set(False)
+        obj.select_set(True)
+        rig.select_set(True)
+        view_layer.objects.active = rig
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+    except RuntimeError:
+        return False
+    finally:
+        for bone in stashed:
+            bone.use_deform = True
+
+    # Heat diffuses across the surface, so geometry that is not connected to
+    # the rest of the mesh -- the trouser knee straps are free-floating
+    # bands -- comes back with no weights at all.  Fill just those in by
+    # distance rather than throwing away the good weights everywhere else.
+    loose = unweighted_vertices(obj)
+    if loose:
+        auto_weight(obj, rig, indices=loose)
+        loose = unweighted_vertices(obj)
+    return not loose
+
+
+def bind(obj, rig, segments=None, rigid=None, prefer_heat=True):
+    """Bind `obj` to `rig`, reporting which method was used."""
     if rigid:
         rigid_weight(obj, rigid)
-    else:
-        auto_weight(obj, rig, segments)
+        BU.add_armature_modifier(obj, rig)
+        return "rigid"
+    if prefer_heat and heat_weight(obj, rig):
+        if not any(m.type == 'ARMATURE' for m in obj.modifiers):
+            BU.add_armature_modifier(obj, rig)
+        obj.parent = rig
+        return "heat"
+    # heat may have left a half-finished bind behind
+    for mod in [m for m in obj.modifiers if m.type == 'ARMATURE']:
+        obj.modifiers.remove(mod)
+    auto_weight(obj, rig, segments)
     BU.add_armature_modifier(obj, rig)
-    return obj
+    return "envelope"
 
 
 def weight_report(obj, top=6):

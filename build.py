@@ -35,6 +35,9 @@ def parse_args(argv=None):
     ap.add_argument("--texture-size", type=int, default=None)
     ap.add_argument("--regen-textures", action="store_true")
     ap.add_argument("--no-rig", action="store_true")
+    ap.add_argument("--pack", action="store_true",
+                    help="pack the textures into the .blend so it is "
+                         "self-contained (breaks live repainting)")
     ap.add_argument("--preview", metavar="DIR", default=None,
                     help="also render turnaround previews into DIR")
     ap.add_argument("--quiet", action="store_true")
@@ -68,7 +71,15 @@ def main(argv=None):
 
     out = args.out if os.path.isabs(args.out) else os.path.join(HERE, args.out)
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    if args.pack:
+        bpy.ops.file.pack_all()
+        say(args, "packed textures into the .blend")
     bpy.ops.wm.save_as_mainfile(filepath=out)
+    if not args.pack:
+        # image paths are stored relative to the .blend, so a file saved
+        # outside the repo cannot find textures/generated any more
+        bpy.ops.file.make_paths_absolute()
+        bpy.ops.wm.save_mainfile(filepath=out)
     say(args, f"saved {out}")
 
     if args.preview:
@@ -115,6 +126,13 @@ def report(args, ch):
                   f"rest error {err * 1000:.2f} mm")
         print(f"[build]   drivers: {rep.get('shape_drivers', 0)} shape key, "
               f"{rep.get('material_drivers', 0)} material")
+        binding = rep.get("binding", {})
+        if binding:
+            by_method = {}
+            for part, method in binding.items():
+                by_method.setdefault(method, []).append(part)
+            for method, parts in sorted(by_method.items()):
+                print(f"[build]   bound by {method}: {', '.join(sorted(parts))}")
 
 
 if __name__ == "__main__":

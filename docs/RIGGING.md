@@ -32,23 +32,49 @@ Both arms and both legs are two-bone IK chains.
 | --- | --- |
 | `hand_ik.L` / `.R` | Hand goal. The hand also copies its rotation. |
 | `elbow_pole.L` / `.R` | Elbow direction. Translation only. |
-| `foot_ik.L` / `.R` | Foot goal, sitting on the floor at Z = 0. The foot copies its rotation, so rotating this control rolls the whole foot. |
+| `foot_ik.L` / `.R` | Foot goal, sitting flat on the floor at Z = 0. The foot copies its rotation, so rotating this control rolls the whole foot. |
 | `toe_ik.L` / `.R` | Toe roll, for peeling the foot off the ground. |
 | `knee_pole.L` / `.R` | Knee direction. Translation only. |
+| `foot_socket.L` / `.R` | Mechanism, hidden by default. See below. |
 
-**Pole angles are solved at build time, not guessed.** Solving them on the
-rest pose does not work — a straight limb is indifferent to the pole, so
-every angle scores identically and the solver picks one at random, which is
-how you get knees that bend backwards. Instead `armature._solve_pole_angle`
-bends the limb first, then keeps whichever angle drives the knee furthest
-forward (and the elbow furthest back). The build prints the result:
+The foot control lies flat on the floor, but the IK chain has to reach the
+**ankle**. Aiming the shin at the control itself drags the ankle 85 mm down
+to floor level before anything is even posed, so the chain targets
+`foot_socket` instead — a child of the control that duplicates the foot
+bone exactly. That also makes the foot's rotation copy identity at rest.
+
+### Pole targets and pole angles
+
+Two-bone IK forces the middle joint into the plane through the root, the
+tip and the pole. Two things follow, and both are handled at build time:
+
+* **Pole placement.** `armature.pole_position` projects the modelled elbow
+  (or knee) onto the shoulder-to-wrist axis and pushes the pole straight
+  out along that offset, so the plane contains the bend *as modelled*. A
+  pole placed by eye puts the joint somewhere else the moment IK engages.
+* **Pole angle.** `armature._solve_pole_angle` scores every candidate twice:
+  once with the limb deliberately bent, to find which half of the circle
+  drives the knee forward and the elbow back, and once at rest, to find
+  which angle disturbs the modelled pose least. It takes the better-bending
+  half, then the smallest rest error. Scoring at rest alone is not enough —
+  a straight limb is indifferent to the pole, so every angle ties and the
+  solver picks one at random, which is exactly how knees end up bending
+  backwards.
+
+Both limbs are modelled with their joints already bowed the right way — the
+elbow backwards, the knee forwards — so the IK plane and the mesh agree.
+The build prints the outcome:
 
 ```
-[build]   IK leg.L: pole angle  -80.0 deg, rest error 1.27 mm
+[build]   IK leg.L: pole angle  -86.0 deg, rest error 0.22 mm
 ```
 
 The rest error is how far the joint drifts from its modelled position with
-IK on; anything under a couple of millimetres is invisible.
+IK switched on. It should be a fraction of a millimetre.
+
+IK stretching is switched off, so an out-of-reach goal leaves the limb
+straight rather than scaling the bones (and, through inherited scale, the
+feet).
 
 ### FK/IK blending
 
@@ -176,22 +202,42 @@ shadow on `SET-ShadowCatcher`, which comes from the key light.
 
 ## Skinning
 
-Weights are computed by `character/skinning.py` rather than by Blender's
-automatic weights, which guess badly around the crotch and the fingers.
-Each vertex takes the four strongest bones by inverse distance to the bone
-*segment*, tapered to zero at the edge of a per-bone reach, and multiplied
-by a smooth left/right mask so the thighs do not grab each other across the
-crotch. Face parts skip all that and bind rigidly to one bone.
+The body and all four garments are bound with **bone heat**. Distance-based
+weighting cannot tell that an arm hanging beside the body is not attached to
+the lower back — it just sees a bone 13 cm away and hands it a quarter of
+the vertex, which drags the whole torso along when the arm moves. Heat
+diffuses across the surface instead, so influence has to travel through the
+mesh.
+
+Heat has one blind spot: geometry that is not connected to the rest of the
+mesh comes back with no weights at all. The trouser knee straps are
+free-floating bands, so `skinning.heat_weight` fills just those vertices in
+by distance afterwards rather than discarding the good weights everywhere
+else. `character/skinning.py` also keeps a full envelope implementation as
+a fallback if the heat solver refuses a mesh outright.
+
+The eyeballs are excluded from automatic weighting — they sit *inside* the
+skull, so any distance-based scheme hands them a patch of face. They and
+the other face shells bind rigidly to a single bone instead.
 
 `tools/verify.py` asserts that no vertex on the body or any garment is left
-unweighted.
+unweighted, and that each has exactly one armature modifier.
 
 ---
 
 ## Verifying changes
 
-`python3 -m tools.verify --blend build/kaito.blend` runs 73 checks that
+`python3 -m tools.verify --blend build/kaito.blend` runs 85 checks that
 *pose* the rig and measure the response — IK moves the foot 12 cm, the
 blink slider closes the eye, `SHD-ctrl` retints all eight toon materials,
 `SHD-key` turns the lamp 60°. If you change the rig, run it. Failures print
 the measured number, so they can be diagnosed without opening Blender.
+
+The checks worth understanding are the **rest-pose** ones. Constraints are
+evaluated even when every control is at zero, so "all bones at zero" is not
+the same as "the model is where it was modelled". These assert that with
+the rig at rest no bone has moved more than 4 mm and no mesh has drifted
+more than 4 mm from its unrigged shape. That is the check that catches an
+IK chain aimed at the wrong target, a rotation copy whose spaces do not
+match at rest, or stretchy IK quietly scaling a limb — all of which look
+fine in a bone display and wreck the render.

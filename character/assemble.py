@@ -187,14 +187,15 @@ def build_rig(ch):
     SHADOWRIG.apply_shadow_widgets(rig, widgets)
 
     segments = SKIN.collect_bone_segments(rig)
+    methods = {}
     for key in ENVELOPE_BINDING:
         obj = ch.objects.get(key)
         if obj is not None:
-            SKIN.bind(obj, rig, segments)
+            methods[key] = SKIN.bind(obj, rig, segments)
     for key, bone in RIGID_BINDING.items():
         obj = ch.objects.get(key)
         if obj is not None:
-            SKIN.bind(obj, rig, rigid=bone)
+            methods[key] = SKIN.bind(obj, rig, rigid=bone)
 
     drivers = FACERIG.add_shape_drivers(rig, ch.objects)
     shadow = SHADOWRIG.build(rig, ch.collections, ch.materials, widgets)
@@ -202,7 +203,8 @@ def build_rig(ch):
 
     return {"ik": ik_report, "shape_drivers": len(drivers),
             "material_drivers": shadow["drivers"],
-            "lights": sorted(shadow["lights"])}
+            "lights": sorted(shadow["lights"]),
+            "binding": methods}
 
 
 def build(texture_dir=None, with_rig=True):

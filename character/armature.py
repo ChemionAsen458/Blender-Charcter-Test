@@ -55,6 +55,26 @@ def _bone(edit_bones, name, head, tail, parent=None, connect=False,
     return b
 
 
+def pole_position(root, joint, tip, distance):
+    """Where a pole target must sit to reproduce a modelled limb bend.
+
+    Two-bone IK forces the middle joint into the plane through the root,
+    the tip and the pole.  If the pole is placed by eye, that plane does
+    not contain the elbow (or knee) as modelled, and switching IK on shifts
+    the joint.  Projecting the joint onto the root-tip axis and pushing the
+    pole straight out along the offset puts the modelled bend exactly in
+    the plane, so the rest pose survives untouched.
+    """
+    root, joint, tip = Vector(root), Vector(joint), Vector(tip)
+    axis = tip - root
+    denom = axis.dot(axis) or 1.0
+    projected = root + axis * ((joint - root).dot(axis) / denom)
+    offset = joint - projected
+    if offset.length < 1e-5:
+        offset = Vector((0.0, 1.0, 0.0))
+    return joint + offset.normalized() * distance
+
+
 def _finger_chain(edit_bones, prefix, base, direction, total_length, side,
                   parent, splits=(0.44, 0.33, 0.23)):
     """Three phalanges marching along `direction` from `base`."""
@@ -129,8 +149,9 @@ def _arm_bones(eb, side):
 
     # IK controls
     _bone(eb, f"hand_ik.{side}", wrist, hand_tip, "root")
-    _bone(eb, f"elbow_pole.{side}", (s * 0.24, 0.42, 1.06),
-          (s * 0.24, 0.42, 1.12), "root")
+    pole = pole_position(shoulder_tip, elbow, wrist, 0.42)
+    _bone(eb, f"elbow_pole.{side}", pole, pole + Vector((0, 0, 0.06)),
+          "root")
 
     hx = s * (C.WRIST[0] + 0.002)
     hy = C.WRIST[1] - 0.004
@@ -165,9 +186,16 @@ def _leg_bones(eb, side):
 
     _bone(eb, f"foot_ik.{side}", (s * C.FOOT["x"], 0.010, 0.0),
           (s * C.FOOT["x"], -0.12, 0.0), "root")
+    # The foot control lies flat on the floor, but the IK chain has to
+    # reach the *ankle* -- aiming the shin at the control itself drags the
+    # ankle 85 mm down to floor level in the rest pose.  This socket is a
+    # child of the control that duplicates the foot bone exactly, so the
+    # IK lands on the ankle and a world-space rotation copy is identity at
+    # rest.
+    _bone(eb, f"foot_socket.{side}", ankle, ball, f"foot_ik.{side}")
     _bone(eb, f"toe_ik.{side}", ball, toe, f"foot_ik.{side}")
-    _bone(eb, f"knee_pole.{side}", (s * 0.12, -0.52, Z["knee"]),
-          (s * 0.12, -0.52, Z["knee"] + 0.06), "root")
+    pole = pole_position(hip, knee, ankle, 0.46)
+    _bone(eb, f"knee_pole.{side}", pole, pole + Vector((0, 0, 0.06)), "root")
 
 
 def build_skeleton(collection, name=None):
@@ -213,6 +241,7 @@ def _make_bone_collections(arm):
     assign(COL_CONTROL, lambda n: n in CONTROL_BONES)
     assign(COL_IK, lambda n: n.startswith(("hand_ik", "foot_ik", "toe_ik",
                                            "elbow_pole", "knee_pole")))
+    assign(COL_MECH, lambda n: n.startswith("foot_socket"))
     assign(COL_FK, lambda n: n.startswith(("shoulder", "upper_arm", "forearm",
                                            "hand.", "thigh", "shin", "foot.",
                                            "toe.")))
@@ -367,7 +396,7 @@ def _solve_pole_angle(rig, ik_bone_name, constraint, target_bone,
     far the middle joint travels along `prefer` (forward for a knee,
     backward for an elbow).  Ties are broken by rest-pose fidelity.
     """
-    candidates = candidates or [math.radians(a) for a in range(-180, 180, 5)]
+    candidates = candidates or [math.radians(a) for a in range(-180, 180, 2)]
     deps = bpy.context.evaluated_depsgraph_get()
     joint = rig.pose.bones[ik_bone_name]
     target = rig.pose.bones[target_bone]
@@ -377,20 +406,37 @@ def _solve_pole_angle(rig, ik_bone_name, constraint, target_bone,
     target.location = Vector(bend_offset)
     deps.update()
 
-    best, best_score = candidates[0], None
+    # score every candidate twice: how far it throws the joint in the
+    # preferred direction when the limb is bent, and how far it leaves the
+    # joint from where it was modelled at rest
+    bend_score = {}
     for angle in candidates:
         constraint.pole_angle = angle
         deps.update()
-        score = joint.head.dot(prefer)
-        if best_score is None or score > best_score:
-            best_score, best = score, angle
-    constraint.pole_angle = best
+        bend_score[angle] = joint.head.dot(prefer)
 
     target.location = saved
     deps.update()
     rest_head = rig.data.bones[ik_bone_name].head_local
-    rest_error = (joint.head - rest_head).length
-    return best, rest_error
+    rest_error = {}
+    for angle in candidates:
+        constraint.pole_angle = angle
+        deps.update()
+        rest_error[angle] = (joint.head - rest_head).length
+
+    # With the pole placed in the modelled bend plane the rest error alone
+    # identifies the right angle, but only within the correct hemisphere --
+    # the mirrored solution fits the rest pose just as well and bends the
+    # joint backwards.  So keep the better-bending half, then take the
+    # angle that disturbs the rest pose least.
+    ranked = sorted(bend_score.values())
+    cutoff = ranked[len(ranked) // 2]
+    acceptable = [a for a in candidates if bend_score[a] >= cutoff] or candidates
+    best = min(acceptable, key=lambda a: rest_error[a])
+
+    constraint.pole_angle = best
+    deps.update()
+    return best, rest_error[best]
 
 
 def add_constraints(rig):
@@ -411,6 +457,7 @@ def add_constraints(rig):
         ik.pole_subtarget = f"elbow_pole.{side}"
         ik.chain_count = 2
         ik.use_tail = True
+        ik.use_stretch = False
         # elbows point backwards (+Y)
         angle, err = _solve_pole_angle(
             rig, f"forearm.{side}", ik, f"hand_ik.{side}",
@@ -430,11 +477,12 @@ def add_constraints(rig):
         ik = pb.constraints.new('IK')
         ik.name = "IK"
         ik.target = rig
-        ik.subtarget = f"foot_ik.{side}"
+        ik.subtarget = f"foot_socket.{side}"
         ik.pole_target = rig
         ik.pole_subtarget = f"knee_pole.{side}"
         ik.chain_count = 2
         ik.use_tail = True
+        ik.use_stretch = False
         # knees point forwards (-Y)
         angle, err = _solve_pole_angle(
             rig, f"shin.{side}", ik, f"foot_ik.{side}",
@@ -446,7 +494,7 @@ def add_constraints(rig):
         cr = foot.constraints.new('COPY_ROTATION')
         cr.name = "IK Foot"
         cr.target = rig
-        cr.subtarget = f"foot_ik.{side}"
+        cr.subtarget = f"foot_socket.{side}"
         _drive_influence(rig, foot, cr, f"ik_leg_{tag}")
 
         toe = rig.pose.bones[f"toe.{side}"]

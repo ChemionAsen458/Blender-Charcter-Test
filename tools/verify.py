@@ -150,6 +150,60 @@ def check_weights(res, objects):
         res.check(f"armature modifier {name}", has_mod, "")
 
 
+def check_rest_pose(res, rig, objects):
+    """The rig must not deform anything while it is at rest.
+
+    This is the check that would have caught the leg IK aiming at a
+    floor-level control instead of the ankle: every control was at zero,
+    yet the mesh was 27 cm out of shape.  Constraints are evaluated even in
+    the rest pose, so "all bones at zero" is not the same as "the model is
+    where it was modelled".
+    """
+    _reset(rig)
+    deps = _refresh(rig)
+
+    off = []
+    for pb in _eval(rig).pose.bones:
+        rest = rig.data.bones[pb.name]
+        drift = max((pb.head - rest.head_local).length,
+                    (pb.tail - rest.tail_local).length)
+        if drift > 0.004:
+            off.append((drift, pb.name))
+    off.sort(reverse=True)
+    detail = ", ".join(f"{n} {d * 1000:.0f}mm" for d, n in off[:4]) or         "every bone within 4 mm of rest"
+    res.check("rest pose: bones undisturbed", not off, detail)
+
+    for name in ("CHR-Body", "CHR-Shirt", "CHR-Pants", "CHR-Shoes",
+                 "CHR-Gloves", "CHR-Hair"):
+        obj = objects.get(name)
+        if obj is None:
+            continue
+        arm = next((m for m in obj.modifiers if m.type == 'ARMATURE'), None)
+        if arm is None:
+            continue
+        posed = _evaluated_verts(obj)
+        arm.show_viewport = False
+        _refresh(obj)
+        plain = _evaluated_verts(obj)
+        arm.show_viewport = True
+        _refresh(obj)
+        if len(posed) != len(plain):
+            res.check(f"rest pose: {name}", False, "vertex counts differ")
+            continue
+        worst = max((a - b).length for a, b in zip(posed, plain))
+        res.check(f"rest pose: {name} undeformed", worst < 0.004,
+                  f"max drift {worst * 1000:.1f} mm")
+
+    for name in ("CHR-Body", "CHR-Shirt", "CHR-Pants", "CHR-Shoes",
+                 "CHR-Gloves"):
+        obj = objects.get(name)
+        if obj is None:
+            continue
+        arms = [m for m in obj.modifiers if m.type == 'ARMATURE']
+        res.check(f"single armature modifier {name}", len(arms) == 1,
+                  f"{len(arms)} armature modifiers")
+
+
 def check_ik(res, rig, objects):
     body = objects["CHR-Body"]
     _reset(rig)
@@ -367,9 +421,18 @@ def check_textures(res):
     from character import config as C
     for name in C.TEXTURE_SETS:
         img = bpy.data.images.get(f"{name}.png")
-        ok = img is not None and img.size[0] > 0
-        res.check(f"texture {name}", ok,
-                  f"{img.size[0]}x{img.size[1]}" if ok else "not loaded")
+        # size is (0, 0) until the buffer is actually paged in, which does
+        # not happen on its own in a background session -- ask for it
+        if img is not None and img.size[0] == 0:
+            try:
+                img.reload()
+            except RuntimeError:
+                pass
+        path = bpy.path.abspath(img.filepath) if img else ""
+        ok = img is not None and (img.size[0] > 0 or os.path.exists(path))
+        detail = f"{img.size[0]}x{img.size[1]}" if ok and img.size[0] else \
+            (os.path.basename(path) if ok else "not loaded")
+        res.check(f"texture {name}", ok, detail)
     mats = {"MAT-Skin": "skin.png", "MAT-Hair": "hair.png",
             "MAT-Eyes": "eyes.png", "MAT-Shirt": "shirt.png",
             "MAT-Pants": "pants.png", "MAT-Shoes": "shoes.png",
@@ -395,6 +458,7 @@ def run(blend_path=None):
     check_structure(res, rig, objects)
     check_textures(res)
     check_weights(res, objects)
+    check_rest_pose(res, rig, objects)
     check_ik(res, rig, objects)
     check_fk_ik_blend(res, rig)
     check_face_rig(res, rig, objects)

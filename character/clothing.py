@@ -154,7 +154,10 @@ def _knee_pad(mesh, side, rect):
         a = math.pi * 2.0 * k / 6.0 + math.pi / 6.0
         outline.append((math.cos(a), math.sin(a)))
     rings = []
-    for (scale, depth) in ((1.00, 0.000), (0.90, 0.016), (0.55, 0.026)):
+    # the 0.97 ring is a support loop: without it Catmull-Clark rounds the
+    # hexagonal plate into a disc
+    for (scale, depth) in ((1.00, 0.000), (0.97, 0.010), (0.90, 0.018),
+                           (0.86, 0.024), (0.52, 0.030)):
         ring = []
         for (ux, uz) in outline:
             px = cx + ux * pad["half_w"] * scale
@@ -165,10 +168,10 @@ def _knee_pad(mesh, side, rect):
             ring.append((px, py, pz))
         rings.append(ring)
     idx = [mesh.add_verts(r) for r in rings]
-    mesh.loft_indices(idx, rect["pad"], v_range=(0.04, 0.72),
+    mesh.loft_indices(idx, rect["pad"], v_range=(0.02, 0.74),
                       flip=(side == "R"))
     mesh.cap_ring(idx[-1], rect["pad"], flip=(side == "R"),
-                  uv_center=(0.5, 0.86), uv_radius=0.10)
+                  uv_center=(0.5, 0.88), uv_radius=0.10)
     mesh.mark("knee_pad." + side, [i for r in idx for i in r])
 
     for dz in (pad["strap_dz"], -pad["strap_dz"]):
@@ -265,9 +268,9 @@ def _shoe(mesh, side, rect, sh):
     ids = [i for r in fidx for i in r]
     for i in ids:
         px, py, pz = mesh.verts[i]
-        if pz < sh["sole_h"] + 0.012:
-            w = 1.0 - smoothstep(0.0, sh["sole_h"] + 0.012, pz)
-            pz = lerp(pz, sh["sole_z"], 0.92 * w)
+        if pz < sh["sole_h"] + 0.016:
+            w = 1.0 - smoothstep(0.0, sh["sole_h"] + 0.016, pz)
+            pz = lerp(pz, sh["sole_z"], 0.95 * w)
         if py > sh["heel_y"] - 0.02:
             py = min(py, sh["heel_y"])
         mesh.verts[i] = (px, py, pz)

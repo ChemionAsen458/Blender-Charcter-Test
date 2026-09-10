@@ -14,7 +14,7 @@ blender --background --python build.py -- --out build/kaito.blend
 Then check it actually works:
 
 ```
-python3 -m tools.verify --blend build/kaito.blend      # 73 rig checks
+python3 -m tools.verify --blend build/kaito.blend      # 85 rig checks
 python3 -m tools.showcase --blend build/kaito.blend    # preview sheets
 ```
 
@@ -67,8 +67,9 @@ their labels so you can repaint by hand without guesswork. See
   shoulders, arms, five fingers per hand, legs, feet and toes.
 * **IK** — two-bone IK on both arms and both legs with pole targets, an
   FK/IK blend per limb on the `properties` bone, and toe-roll controls.
-  Pole angles are solved at build time by bending each limb and keeping the
-  angle that puts the knee forward and the elbow back.
+  Pole targets are placed in the plane of the modelled bend and pole angles
+  solved at build time, so switching IK on leaves the rest pose within a
+  fraction of a millimetre.
 * **Face** — `eye_target` aims both eyes; slider bones drive shape keys:
   pull `lid_up.L` down to blink, push `brow.R` up to raise an eyebrow, drag
   `mouth` down to open it. `jaw` is a real deform bone that opens the chin.

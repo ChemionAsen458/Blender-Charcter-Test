@@ -192,7 +192,7 @@ def build_toon_group():
     gloss_scale.name = "SpecScale"
     gloss_scale.operation = 'MULTIPLY'
     gloss_scale.location = (-460, -700)
-    gloss_scale.inputs[1].default_value = 0.16
+    gloss_scale.inputs[1].default_value = 0.11
     links.new(gloss_bw.outputs['Val'], gloss_scale.inputs[0])
 
     spec_range = nodes.new('ShaderNodeMapRange')
@@ -361,8 +361,8 @@ def build_all(texture_dir=None):
     mats["skin"] = mat
 
     mat, nt, grp, tex = _base_material(C.MAT["hair"], "hair", texture_dir,
-                                       spec=0.34)
-    grp.inputs[IN_SPEC_SIZE].default_value = 0.22
+                                       spec=0.24)
+    grp.inputs[IN_SPEC_SIZE].default_value = 0.16
     mats["hair"] = mat
 
     # eyes stay mostly unlit so the iris keeps its painted shading
@@ -375,8 +375,8 @@ def build_all(texture_dir=None):
                                        unlit=0.55, spec=0.0)
     mats["mouth"] = mat
 
-    for key, spec in (("shirt", 0.07), ("pants", 0.07), ("shoes", 0.20),
-                      ("gloves", 0.14)):
+    for key, spec in (("shirt", 0.030), ("pants", 0.030), ("shoes", 0.085),
+                      ("gloves", 0.060)):
         mat, nt, grp, tex = _base_material(C.MAT[key], key, texture_dir,
                                            spec=spec)
         mats[key] = mat

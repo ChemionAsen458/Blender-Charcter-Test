@@ -227,16 +227,14 @@ def add_shape_drivers(rig, objects):
             obj = objects.get(key)
             if obj is None:
                 continue
-            sign = "-" if key.startswith("lid_up") else ""
+            # the upper lid closes by dropping, the lower lid by rising,
+            # so one of them reads the slider inverted
+            close, open_ = ("-", "") if key.startswith("lid_up") else ("", "-")
             wired.append(_drive_shape(
-                rig, obj, "blink",
-                f"max(0.0, {sign}z / {LID_RANGE}) + squint * 0.0",
-                [{"name": "z", "bone": bone, "transform": 'LOC_Z'},
-                 {"name": "squint", "bone": FACE_PROPS_BONE,
-                  "prop": f"squint_{lo}"}]))
+                rig, obj, "blink", f"max(0.0, {close}z / {LID_RANGE})",
+                [{"name": "z", "bone": bone, "transform": 'LOC_Z'}]))
             wired.append(_drive_shape(
-                rig, obj, "wide",
-                f"max(0.0, {'-' if sign == '' else ''}z / {LID_RANGE})",
+                rig, obj, "wide", f"max(0.0, {open_}z / {LID_RANGE})",
                 [{"name": "z", "bone": bone, "transform": 'LOC_Z'}]))
             wired.append(_drive_shape(
                 rig, obj, "squint", "squint",

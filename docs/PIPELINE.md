@@ -77,10 +77,31 @@ BSDF's value well above 1.0, so thresholding it raw makes the "highlight"
 cover half the model. `TOON-Core` scales the glossy term into 0–1 before
 the threshold.
 
-**Solve pole angles on a bent limb.** On a straight limb every pole angle
-scores identically, so a rest-pose solver picks one at random and you get
-knees that bend backwards. `armature._solve_pole_angle` bends the limb
-first and scores on which way the joint travels.
+**Solve pole angles on a bent limb *and* at rest.** On a straight limb every
+pole angle scores identically, so a rest-pose solver picks one at random and
+you get knees that bend backwards; scoring only the bend picks the right
+hemisphere but not the right angle within it.
+`armature._solve_pole_angle` does both — better-bending half first, then
+smallest rest drift — and `pole_position` places the pole in the plane of
+the modelled bend so a right answer exists at all.
+
+**An IK chain reaches its target's head.** A foot control lying flat on the
+floor is not where the ankle is, so aiming the shin at it drags the ankle
+85 mm down before anything is posed. `foot_socket` exists for that reason.
+
+**Bone "local space" carries the rest offset.** A Copy Rotation in
+LOCAL/LOCAL between two bones with different rest orientations is *not*
+identity at rest — it threw the foot 190 mm out. Either match the rest
+orientations and copy in world space (what the rig does now), or expect to
+debug it.
+
+**Turn off IK stretch.** It defaults on, and a stretched limb propagates
+scale into everything parented below it.
+
+**Heat weighting has a blind spot.** It cannot reach geometry that is not
+connected to the rest of the mesh -- free-floating bands like the knee
+straps come back with no weights -- so those get filled in by distance
+afterwards.
 
 **Custom properties do not tag the depsgraph.** If you write a test that
 sets `bone["prop"] = x` and reads a driven value, you will read a stale
