@@ -139,6 +139,12 @@ scowl and still animate the brows on top.
 
 ### Shape keys per object
 
+The eye shell, the eyelids and the face are three layers a couple of
+millimetres apart, and the order matters: the lid's free edge rides
+outside the eye's corneal bulge, or a blink would sweep the lid behind the
+eye and leave it open. `face.py` asserts that clearance and
+`tools/verify.py` re-checks it on the built file.
+
 | Object | Keys |
 | --- | --- |
 | `CHR-LidUp-L/R`, `CHR-LidLo-L/R` | `blink`, `wide`, `squint` |
@@ -227,7 +233,7 @@ unweighted, and that each has exactly one armature modifier.
 
 ## Verifying changes
 
-`python3 -m tools.verify --blend build/kaito.blend` runs 85 checks that
+`python3 -m tools.verify --blend build/kaito.blend` runs 86 checks that
 *pose* the rig and measure the response — IK moves the foot 12 cm, the
 blink slider closes the eye, `SHD-ctrl` retints all eight toon materials,
 `SHD-key` turns the lamp 60°. If you change the rig, run it. Failures print

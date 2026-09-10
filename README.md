@@ -18,7 +18,7 @@ blender --background --python build.py -- --out build/kaito.blend
 Then check it actually works:
 
 ```
-python3 -m tools.verify --blend build/kaito.blend      # 85 rig checks
+python3 -m tools.verify --blend build/kaito.blend      # 86 rig checks
 python3 -m tools.showcase --blend build/kaito.blend    # preview sheets
 ```
 

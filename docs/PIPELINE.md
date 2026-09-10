@@ -98,6 +98,11 @@ debug it.
 **Turn off IK stretch.** It defaults on, and a stretched limb propagates
 scale into everything parented below it.
 
+**The eyelid has to clear the cornea.** The eye shell bulges forward so the
+iris catches light; if the lid's free edge does not ride further out than
+that bulge, a blink sweeps the lid *behind* the eye and the eye stays open
+with the shape key at 1.0. `face.py` asserts the relationship.
+
 **Heat weighting has a blind spot.** It cannot reach geometry that is not
 connected to the rest of the mesh -- free-floating bands like the knee
 straps come back with no weights -- so those get filled in by distance
