@@ -1,9 +1,28 @@
 """Cel-shaded (NPR) materials driven by one shared node group.
 
-Every surface routes through ``TOON-Core``: a Diffuse BSDF is converted to
-RGB with *Shader to RGB* -- which samples the real scene lighting, so the
-key light's direction and its cast shadows still drive the look -- then
-posterised into a hard terminator, tinted, and emitted.
+Every surface routes through ``TOON-Core``, whose interface deliberately
+mirrors the ``Yang_Shader`` group of the reference rig:
+
+===============  ========================================================
+``Normal``       a normal to shade with instead of the geometry normal
+``Lit``          the colour on the light side of the terminator
+``Shaded``       the colour on the dark side
+``Shade Map``    biases *where* the terminator falls, per pixel
+``Normals``      how far to blend ``Normal`` over the geometry normal
+===============  ========================================================
+
+and which returns ``Result`` (the shader), ``ShadowMap`` (the raw 0-1
+terminator, useful as a mask), plus ``Lit``, ``Shaded`` and ``Normals``
+passed through for downstream materials.
+
+The lit/shaded *pair* is the important part. A cel character is not a
+texture that gets darkened -- it is two paintings, one for each side of the
+terminator, and the shader picks between them. Supplying only ``Lit``
+still works: ``Shaded`` is then derived from it through ``Shadow Tint``.
+
+Inside, a Diffuse BSDF is converted with *Shader to RGB* -- which samples
+the real scene lighting, so the key light's direction and its cast shadows
+still drive the look -- then thresholded into a hard terminator.
 
 Keeping the posterising in a single group is what makes the shadow rig
 possible: one set of drivers on the group's inputs retints and re-thresholds
@@ -24,8 +43,17 @@ from . import config as C
 TOON_GROUP = "TOON-Core"
 TOON_NODE = "TOON"          # the group instance's name inside each material
 
-# group input names, also used as the driver targets by the shadow rig
-IN_COLOR = "Base Color"
+# --- the reference rig's five shading inputs -------------------------------
+IN_NORMAL = "Normal"
+IN_LIT = "Lit"
+IN_SHADED = "Shaded"
+IN_SHADEMAP = "Shade Map"
+IN_NORMALS = "Normals"
+
+# --- how much of a supplied `Shaded` map to use (0 = derive it from Lit) ---
+IN_SHADED_MIX = "Shaded Mix"
+
+# --- art-direction controls, driven by the shadow rig ----------------------
 IN_TINT = "Shadow Tint"
 IN_THRESHOLD = "Shadow Threshold"
 IN_SOFTNESS = "Shadow Softness"
@@ -35,6 +63,15 @@ IN_RIM_WIDTH = "Rim Width"
 IN_SPEC = "Specular Strength"
 IN_SPEC_SIZE = "Specular Size"
 IN_EMIT = "Unlit Mix"
+
+OUT_RESULT = "Result"
+OUT_SHADOWMAP = "ShadowMap"
+OUT_LIT = "Lit"
+OUT_SHADED = "Shaded"
+OUT_NORMALS = "Normals"
+
+# the per-vertex attribute that biases the terminator, if a mesh has one
+SHADE_ATTR = "shade"
 
 SHADOW_INPUTS = (IN_TINT, IN_THRESHOLD, IN_SOFTNESS, IN_STRENGTH,
                  IN_RIM, IN_RIM_WIDTH, IN_SPEC, IN_SPEC_SIZE)
@@ -64,7 +101,14 @@ def build_toon_group():
 
     g = bpy.data.node_groups.new(TOON_GROUP, 'ShaderNodeTree')
     S = C.SHADOW
-    _new_socket(g, IN_COLOR, 'NodeSocketColor', (0.8, 0.8, 0.8, 1.0))
+    # the five reference inputs first, in the reference's order
+    _new_socket(g, IN_NORMAL, 'NodeSocketVector', (0.0, 0.0, 1.0))
+    _new_socket(g, IN_LIT, 'NodeSocketColor', (0.8, 0.8, 0.8, 1.0))
+    _new_socket(g, IN_SHADED, 'NodeSocketColor', (0.5, 0.5, 0.6, 1.0))
+    _new_socket(g, IN_SHADEMAP, 'NodeSocketFloat', 0.0, -1.0, 1.0)
+    _new_socket(g, IN_NORMALS, 'NodeSocketFloat', 0.0, 0.0, 1.0)
+    _new_socket(g, IN_SHADED_MIX, 'NodeSocketFloat', 0.0, 0.0, 1.0)
+    # then the art-direction controls the shadow rig drives
     _new_socket(g, IN_TINT, 'NodeSocketColor', (*S["tint"], 1.0))
     _new_socket(g, IN_THRESHOLD, 'NodeSocketFloat', S["threshold"], 0.0, 1.0)
     _new_socket(g, IN_SOFTNESS, 'NodeSocketFloat', S["softness"], 0.0, 1.0)
@@ -74,19 +118,41 @@ def build_toon_group():
     _new_socket(g, IN_SPEC, 'NodeSocketFloat', S["spec_strength"], 0.0, 4.0)
     _new_socket(g, IN_SPEC_SIZE, 'NodeSocketFloat', 0.14, 0.0, 1.0)
     _new_socket(g, IN_EMIT, 'NodeSocketFloat', 0.0, 0.0, 1.0)
-    g.interface.new_socket(name="Shader", in_out='OUTPUT',
-                           socket_type='NodeSocketShader')
+
+    for nm, kind in ((OUT_RESULT, 'NodeSocketShader'),
+                     (OUT_SHADOWMAP, 'NodeSocketFloat'),
+                     (OUT_LIT, 'NodeSocketColor'),
+                     (OUT_SHADED, 'NodeSocketColor'),
+                     (OUT_NORMALS, 'NodeSocketVector')):
+        g.interface.new_socket(name=nm, in_out='OUTPUT', socket_type=kind)
 
     nodes, links = g.nodes, g.links
     gin = nodes.new('NodeGroupInput')
-    gin.location = (-1100, 0)
+    gin.location = (-1300, 0)
     gout = nodes.new('NodeGroupOutput')
     gout.location = (900, 0)
+
+    # -- shading normal --------------------------------------------------
+    # blend the supplied normal over the geometry one.  `Normals` at 0
+    # leaves the mesh shading untouched, so a material that supplies no
+    # normal map costs nothing.
+    coord = nodes.new('ShaderNodeTexCoord')
+    coord.location = (-1300, -300)
+    nrm_mix = nodes.new('ShaderNodeMix')
+    nrm_mix.name = "NormalBlend"
+    nrm_mix.data_type = 'VECTOR'
+    nrm_mix.location = (-1080, -240)
+    links.new(gin.outputs[IN_NORMALS], nrm_mix.inputs[0])   # Factor
+    links.new(coord.outputs['Normal'], nrm_mix.inputs[4])   # A
+    links.new(gin.outputs[IN_NORMAL], nrm_mix.inputs[5])    # B
+    shading_normal = nrm_mix.outputs[1]                     # Result (vector)
+    links.new(shading_normal, gout.inputs[OUT_NORMALS])
 
     # -- light term: real lighting, then posterised ---------------------
     diffuse = nodes.new('ShaderNodeBsdfDiffuse')
     diffuse.location = (-900, 260)
     diffuse.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    links.new(shading_normal, diffuse.inputs['Normal'])
     to_rgb = nodes.new('ShaderNodeShaderToRGB')
     to_rgb.location = (-720, 260)
     links.new(diffuse.outputs['BSDF'], to_rgb.inputs['Shader'])
@@ -95,52 +161,94 @@ def build_toon_group():
     lum.location = (-560, 260)
     links.new(to_rgb.outputs['Color'], lum.inputs['Color'])
 
+    # -- shade map: bias where the terminator falls ----------------------
+    # the group input, plus an optional per-vertex attribute, plus
+    # backfacing (a backface is never lit).  Subtracting the sum from the
+    # luminance drags those regions across the terminator into shadow.
+    attr = nodes.new('ShaderNodeAttribute')
+    attr.name = "ShadeAttribute"
+    attr.attribute_name = SHADE_ATTR
+    attr.location = (-900, 60)
+    bias = nodes.new('ShaderNodeMath')
+    bias.operation = 'ADD'
+    bias.location = (-720, 60)
+    links.new(attr.outputs['Fac'], bias.inputs[0])
+    links.new(gin.outputs[IN_SHADEMAP], bias.inputs[1])
+
+    backface = nodes.new('ShaderNodeNewGeometry')
+    backface.location = (-900, -120)
+    bias2 = nodes.new('ShaderNodeMath')
+    bias2.operation = 'ADD'
+    bias2.location = (-560, 60)
+    links.new(bias.outputs['Value'], bias2.inputs[0])
+    links.new(backface.outputs['Backfacing'], bias2.inputs[1])
+
+    biased = nodes.new('ShaderNodeMath')
+    biased.operation = 'SUBTRACT'
+    biased.location = (-400, 260)
+    links.new(lum.outputs['Val'], biased.inputs[0])
+    links.new(bias2.outputs['Value'], biased.inputs[1])
+
     # terminator = smoothstep(threshold - softness, threshold + softness)
     lo = nodes.new('ShaderNodeMath')
     lo.operation = 'SUBTRACT'
-    lo.location = (-560, 80)
+    lo.location = (-560, -260)
     hi = nodes.new('ShaderNodeMath')
     hi.operation = 'ADD'
-    hi.location = (-560, -80)
+    hi.location = (-560, -420)
     links.new(gin.outputs[IN_THRESHOLD], lo.inputs[0])
     links.new(gin.outputs[IN_SOFTNESS], lo.inputs[1])
     links.new(gin.outputs[IN_THRESHOLD], hi.inputs[0])
     links.new(gin.outputs[IN_SOFTNESS], hi.inputs[1])
 
     ramp = nodes.new('ShaderNodeMapRange')
-    ramp.location = (-360, 160)
+    ramp.location = (-220, 160)
     ramp.clamp = True
     ramp.interpolation_type = 'SMOOTHSTEP'
-    links.new(lum.outputs['Val'], ramp.inputs['Value'])
+    links.new(biased.outputs['Value'], ramp.inputs['Value'])
     links.new(lo.outputs['Value'], ramp.inputs['From Min'])
     links.new(hi.outputs['Value'], ramp.inputs['From Max'])
+    links.new(ramp.outputs['Result'], gout.inputs[OUT_SHADOWMAP])
 
-    # -- shadow colour ---------------------------------------------------
-    shadow_col = nodes.new('ShaderNodeMixRGB')
-    shadow_col.blend_type = 'MULTIPLY'
-    shadow_col.location = (-360, -140)
-    shadow_col.inputs['Fac'].default_value = 1.0
-    links.new(gin.outputs[IN_COLOR], shadow_col.inputs['Color1'])
-    links.new(gin.outputs[IN_TINT], shadow_col.inputs['Color2'])
+    # -- the shaded colour -----------------------------------------------
+    # derived from Lit through the tint unless the material supplies its
+    # own painted `Shaded` map, in which case `Shaded Mix` fades to it.
+    derived = nodes.new('ShaderNodeMixRGB')
+    derived.name = "DerivedShaded"
+    derived.blend_type = 'MULTIPLY'
+    derived.location = (-400, -560)
+    derived.inputs['Fac'].default_value = 1.0
+    links.new(gin.outputs[IN_LIT], derived.inputs['Color1'])
+    links.new(gin.outputs[IN_TINT], derived.inputs['Color2'])
+
+    shaded = nodes.new('ShaderNodeMixRGB')
+    shaded.name = "ShadedSource"
+    shaded.blend_type = 'MIX'
+    shaded.location = (-220, -560)
+    links.new(gin.outputs[IN_SHADED_MIX], shaded.inputs['Fac'])
+    links.new(derived.outputs['Color'], shaded.inputs['Color1'])
+    links.new(gin.outputs[IN_SHADED], shaded.inputs['Color2'])
+    links.new(shaded.outputs['Color'], gout.inputs[OUT_SHADED])
+    links.new(gin.outputs[IN_LIT], gout.inputs[OUT_LIT])
 
     # how far toward the shadow colour the dark side goes
     inv = nodes.new('ShaderNodeMath')
     inv.operation = 'SUBTRACT'
-    inv.location = (-180, 20)
+    inv.location = (-40, 20)
     inv.inputs[0].default_value = 1.0
     links.new(ramp.outputs['Result'], inv.inputs[1])
     strength_mask = nodes.new('ShaderNodeMath')
     strength_mask.operation = 'MULTIPLY'
-    strength_mask.location = (-20, 20)
+    strength_mask.location = (120, 20)
     links.new(inv.outputs['Value'], strength_mask.inputs[0])
     links.new(gin.outputs[IN_STRENGTH], strength_mask.inputs[1])
 
     base_mix = nodes.new('ShaderNodeMixRGB')
-    base_mix.location = (160, 60)
+    base_mix.location = (280, 60)
     base_mix.blend_type = 'MIX'
     links.new(strength_mask.outputs['Value'], base_mix.inputs['Fac'])
-    links.new(gin.outputs[IN_COLOR], base_mix.inputs['Color1'])
-    links.new(shadow_col.outputs['Color'], base_mix.inputs['Color2'])
+    links.new(gin.outputs[IN_LIT], base_mix.inputs['Color1'])
+    links.new(shaded.outputs['Color'], base_mix.inputs['Color2'])
 
     # -- rim light -------------------------------------------------------
     fresnel = nodes.new('ShaderNodeLayerWeight')
@@ -241,12 +349,12 @@ def build_toon_group():
     unlit.location = (680, 60)
     links.new(gin.outputs[IN_EMIT], unlit.inputs['Fac'])
     links.new(add_spec.outputs['Color'], unlit.inputs['Color1'])
-    links.new(gin.outputs[IN_COLOR], unlit.inputs['Color2'])
+    links.new(gin.outputs[IN_LIT], unlit.inputs['Color2'])
 
     emit = nodes.new('ShaderNodeEmission')
     emit.location = (800, 60)
     links.new(unlit.outputs['Color'], emit.inputs['Color'])
-    links.new(emit.outputs['Emission'], gout.inputs['Shader'])
+    links.new(emit.outputs['Emission'], gout.inputs[OUT_RESULT])
     return g
 
 
@@ -254,8 +362,41 @@ def build_toon_group():
 # textures
 # ---------------------------------------------------------------------------
 
+def input_texture_path(piece, slot, input_dir=None):
+    """``textures/input/<piece>_<slot>.png`` if the artist supplied one.
+
+    Returns ``None`` when the file is absent, which is the normal case --
+    every slot has a fallback, so the build never requires these.
+    """
+    input_dir = input_dir or C.TEXTURE_INPUT_DIR
+    for ext in ("png", "PNG", "jpg", "jpeg", "tga", "tif", "tiff", "exr"):
+        path = os.path.join(input_dir, f"{piece}_{slot}.{ext}")
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _load_image(path, non_color=False):
+    """Load an image once, tagged with the right colour space."""
+    key = os.path.basename(path)
+    img = bpy.data.images.get(key)
+    if img is None:
+        img = bpy.data.images.load(path, check_existing=True)
+    img.colorspace_settings.name = 'Non-Color' if non_color else 'sRGB'
+    return img
+
+
 def load_texture(name, texture_dir):
-    """Load ``<texture_dir>/<name>.png``, generating it if it is missing."""
+    """The base-colour map for ``name``.
+
+    A hand-supplied ``textures/input/<name>_color.png`` wins; otherwise the
+    generated template in ``texture_dir`` is used, generating it first if
+    it is missing.
+    """
+    supplied = input_texture_path(name, "color")
+    if supplied is not None:
+        return _load_image(supplied)
+
     path = os.path.join(texture_dir, f"{name}.png")
     if not os.path.exists(path):
         from tools.generate_textures import generate
@@ -265,6 +406,59 @@ def load_texture(name, texture_dir):
         img = bpy.data.images.load(path, check_existing=True)
     img.colorspace_settings.name = 'sRGB'
     return img
+
+
+def _add_supplied_maps(nt, grp, uv, piece):
+    """Wire whichever of the optional input maps the artist supplied.
+
+    This is the reference rig's per-material normal chain: a map feeds the
+    group's ``Normal`` input and ``Normals`` opens the blend from 0 to the
+    map's strength.  ``Shaded`` and ``Shade Map`` follow the same pattern --
+    absent, they stay at their derived/neutral defaults.
+    """
+    added = []
+
+    normal = input_texture_path(piece, "normal")
+    if normal is not None:
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.name = "NormalTexture"
+        tex.label = f"{piece} normal"
+        tex.location = (-260, -320)
+        tex.image = _load_image(normal, non_color=True)
+        nt.links.new(uv.outputs['UV'], tex.inputs['Vector'])
+        nmap = nt.nodes.new('ShaderNodeNormalMap')
+        nmap.name = "NormalMap"
+        nmap.location = (-40, -320)
+        nmap.uv_map = "UVMap"
+        nt.links.new(tex.outputs['Color'], nmap.inputs['Color'])
+        nt.links.new(nmap.outputs['Normal'], grp.inputs[IN_NORMAL])
+        grp.inputs[IN_NORMALS].default_value = 1.0
+        added.append("normal")
+
+    shaded = input_texture_path(piece, "shaded")
+    if shaded is not None:
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.name = "ShadedTexture"
+        tex.label = f"{piece} shaded"
+        tex.location = (-260, -620)
+        tex.image = _load_image(shaded)
+        nt.links.new(uv.outputs['UV'], tex.inputs['Vector'])
+        nt.links.new(tex.outputs['Color'], grp.inputs[IN_SHADED])
+        grp.inputs[IN_SHADED_MIX].default_value = 1.0
+        added.append("shaded")
+
+    shade = input_texture_path(piece, "shade")
+    if shade is not None:
+        tex = nt.nodes.new('ShaderNodeTexImage')
+        tex.name = "ShadeMapTexture"
+        tex.label = f"{piece} shade map"
+        tex.location = (-260, -880)
+        tex.image = _load_image(shade, non_color=True)
+        nt.links.new(uv.outputs['UV'], tex.inputs['Vector'])
+        nt.links.new(tex.outputs['Color'], grp.inputs[IN_SHADEMAP])
+        added.append("shade")
+
+    return added
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +479,7 @@ def _base_material(name, texture_name, texture_dir, unlit=0.0,
     grp.name = TOON_NODE
     grp.label = TOON_NODE
     grp.location = (200, 0)
-    nt.links.new(grp.outputs['Shader'], out.inputs['Surface'])
+    nt.links.new(grp.outputs[OUT_RESULT], out.inputs['Surface'])
 
     tex = nt.nodes.new('ShaderNodeTexImage')
     tex.name = "BaseTexture"
@@ -296,7 +490,11 @@ def _base_material(name, texture_name, texture_dir, unlit=0.0,
     uv.location = (-480, 0)
     uv.uv_map = "UVMap"
     nt.links.new(uv.outputs['UV'], tex.inputs['Vector'])
-    nt.links.new(tex.outputs['Color'], grp.inputs[IN_COLOR])
+    nt.links.new(tex.outputs['Color'], grp.inputs[IN_LIT])
+
+    supplied = _add_supplied_maps(nt, grp, uv, texture_name)
+    if supplied:
+        mat["input_maps"] = ",".join(supplied)
 
     grp.inputs[IN_EMIT].default_value = unlit
     if spec is not None:
@@ -338,7 +536,7 @@ def _add_face_shadow(mat, nt, grp, tex):
     darken.inputs['Color2'].default_value = (*C.SHADOW["tint"], 1.0)
     nt.links.new(band.outputs['Result'], darken.inputs['Fac'])
     nt.links.new(tex.outputs['Color'], darken.inputs['Color1'])
-    nt.links.new(darken.outputs['Color'], grp.inputs[IN_COLOR])
+    nt.links.new(darken.outputs['Color'], grp.inputs[IN_LIT])
     return band, darken
 
 
@@ -348,11 +546,19 @@ def build_all(texture_dir=None):
     build_toon_group()
     mats = {}
 
+    # the face, carrying the bang shadow the hair casts on the forehead
     mat, nt, grp, tex = _base_material(C.MAT["skin"], "skin", texture_dir,
                                        spec=0.06)
     grp.inputs[IN_SPEC_SIZE].default_value = 0.10
     _add_face_shadow(mat, nt, grp, tex)
     mats["skin"] = mat
+
+    # the same map, the same UVs, but a second material so the body can be
+    # thresholded and tinted independently of the face
+    mat, nt, grp, tex = _base_material(C.MAT["skin_body"], "skin",
+                                       texture_dir, spec=0.06)
+    grp.inputs[IN_SPEC_SIZE].default_value = 0.10
+    mats["skin_body"] = mat
 
     mat, nt, grp, tex = _base_material(C.MAT["hair"], "hair", texture_dir,
                                        spec=0.24)
@@ -377,6 +583,21 @@ def build_all(texture_dir=None):
 
     mats["contact_shadow"] = _contact_shadow_material()
     return mats
+
+
+def supplied_map_report(input_dir=None):
+    """Which input maps exist on disk, per texture set.
+
+    The build prints this so it is obvious at a glance whether a hand
+    -painted map was picked up or silently missing.
+    """
+    report = {}
+    for piece in C.TEXTURE_SETS:
+        found = [slot for slot in C.TEXTURE_SLOTS
+                 if input_texture_path(piece, slot, input_dir) is not None]
+        if found:
+            report[piece] = found
+    return report
 
 
 def _contact_shadow_material():

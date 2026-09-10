@@ -18,6 +18,34 @@ python3 -m tools.generate_textures --size 2048 --out textures/generated
 python3 -m tools.generate_textures --only skin eyes --no-guides
 ```
 
+## Supplying your own maps
+
+Drop files in `textures/input/` and the build picks them up instead of the
+generated template. Nothing else needs editing — see
+[`textures/input/README.md`](../../textures/input/README.md) for the full
+spec.
+
+| File | Feeds | Missing it means |
+| --- | --- | --- |
+| `<piece>_color.png` | the shader's `Lit` input | the generated template is used |
+| `<piece>_shaded.png` | the shader's `Shaded` input | `Shaded` is derived from `Lit` through `Shadow Tint` |
+| `<piece>_normal.png` | `Normal Map` → the shader's `Normal` input, with `Normals` opened to 1 | flat geometry normal, `Normals` stays 0 |
+| `<piece>_shade.png` | the shader's `Shade Map` input | uniform 0 — the terminator falls wherever the light puts it |
+
+`<piece>` is one of `skin` `hair` `eyes` `shirt` `pants` `shoes` `gloves`.
+`_color` and `_shaded` are read as sRGB; `_normal` and `_shade` are set to
+**Non-Colour** automatically, so supply them as plain data. Normal maps are
+tangent-space, OpenGL convention (+Y up).
+
+The build prints what it picked up:
+
+```
+[build]   input maps: shirt    normal
+```
+
+and `tools/verify.py` adds a check per supplied normal map confirming it
+actually reaches the group's `Normal` input rather than sitting unlinked.
+
 Every template is written twice. `<name>.png` is what the material loads.
 `<name>_guide.png` is the same image with the **UV wireframe**, the atlas
 rectangles and their labels drawn on top — open it as a reference layer,

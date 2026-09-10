@@ -238,12 +238,15 @@ def _build_trunk(mesh):
     seam = N // 2                      # put the UV seam down the spine
     mesh.loft_indices(idx[:n_torso], SKIN["torso"], skip=skip,
                       v_range=(0.02, 0.98), u_shift=seam)
+    # the head goes into its own material slot: the face is lit separately
+    # from the body, the way the reference rig splits `Skin` from `Skin Body`
     mesh.loft_indices(idx[n_torso - 1:], SKIN["head"], row_offset=n_torso - 1,
-                      v_range=(0.02, 0.99), u_shift=seam)
+                      v_range=(0.02, 0.99), u_shift=seam,
+                      mat=C.SKIN_SLOT_FACE)
 
     # crown cap
     mesh.cap_ring(idx[-1], SKIN["head"], uv_center=(0.5, 0.985),
-                  uv_radius=0.012)
+                  uv_radius=0.012, mat=C.SKIN_SLOT_FACE)
 
     mesh.mark("head", head_indices)
     mesh.mark("torso", [i for r in idx[:n_torso] for i in r])

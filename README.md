@@ -18,7 +18,7 @@ blender --background --python build.py -- --out build/kaito.blend
 Then check it actually works:
 
 ```
-python3 -m tools.verify --blend build/kaito.blend      # 86 rig checks
+python3 -m tools.verify --blend build/kaito.blend      # 97 rig checks
 python3 -m tools.showcase --blend build/kaito.blend    # preview sheets
 ```
 
@@ -48,7 +48,7 @@ face:
 
 | Object | What it is |
 | --- | --- |
-| `CHR-Body` | The base character: head, torso, arms, hands, legs, feet, ears. One watertight quad shell under a Subdivision Surface modifier. |
+| `CHR-Body` | The base character: head, torso, arms, hands, legs, feet, ears. One watertight quad shell under a Subdivision Surface modifier. Two material slots — `MAT-SkinBody` below the neck, `MAT-Skin` above it — so the face grades separately from the body. |
 | `CHR-Eye-L` / `-R` | Curved eye shells carrying the silver iris. Rotated by their own bones. |
 | `CHR-LidUp-L/R`, `CHR-LidLo-L/R` | Eyelid shells with `blink` / `wide` / `squint` shape keys. |
 | `CHR-Brow-L` / `-R` | Eyebrow shells with `up` / `down` / `angry` / `sad` / `raise` shape keys. |
@@ -78,7 +78,7 @@ their labels so you can repaint by hand without guesswork. See
 
 ### The rig
 
-101 bones in seven bone collections. Full detail in
+97 bones in eight bone collections. Full detail in
 [docs/RIGGING.md](docs/RIGGING.md); the short version:
 
 * **Body** — `root` → `torso` → spine → chest → neck → head, with
@@ -102,11 +102,74 @@ its own controls on the same armature:
 | --- | --- |
 | `SHD-key`, `SHD-fill`, `SHD-rim` | Light-direction handles. A Sun rides each bone, aimed down its length — point the bone, point the light, and the cel terminator sweeps across the whole character. |
 | `SHD-ctrl` | 14 custom properties driving **every** toon material at once: terminator position and softness, shadow depth, shadow tint (RGB), rim light, specular, light energies, and cast-shadow softness. |
+| `SUN-body`, `SUN-face`, `SUN-hair` | Per-region grading, in the `Sunvec` bone collection. Five offsets each, added on top of `SHD-ctrl`, so the face can read cleaner than the body and the hair harder than either without breaking the global control. |
 | `SHD-face` | Slides the shadow the fringe casts up and down the forehead — the classic anime bang shadow, animatable per shot. |
 | `SHD-contact` | Carries the ground contact patch: move it, scale it, fade it. |
 
-72 drivers connect `SHD-ctrl` to the materials, so one slider retints or
-re-thresholds the entire character.
+81 drivers connect `SHD-ctrl` and the three region controls to the
+materials, so one slider retints or re-thresholds the entire character —
+and three more pull each region away from it.
+
+### The shader
+
+Every material routes through one shared node group, `TOON-Core`, whose
+interface deliberately mirrors the `Yang_Shader` group of the reference rig
+this project was built to match:
+
+| Input | What it takes |
+| --- | --- |
+| `Normal` | a normal to shade with instead of the geometry normal |
+| `Lit` | the colour on the light side of the terminator |
+| `Shaded` | the colour on the dark side |
+| `Shade Map` | biases *where* the terminator falls, per pixel |
+| `Normals` | how far to blend `Normal` over the geometry normal |
+
+returning `Result` (the shader), `ShadowMap` (the raw 0–1 terminator, useful
+as a mask), and `Lit`/`Shaded`/`Normals` passed through.
+
+The lit/shaded **pair** is the point. A cel character is not a texture that
+gets darkened — it is two paintings, one per side of the terminator, and the
+shader picks between them. Supply only `Lit` and `Shaded` is derived from it
+through `Shadow Tint`, so nothing breaks if you never paint one.
+
+Inside: a Diffuse BSDF → *Shader to RGB* → threshold → `Mix(Shaded, Lit)`,
+with the shade map, a per-vertex `shade` attribute and backfacing folded
+into the threshold, and the rim/specular terms added on top.
+
+---
+
+## Matching the reference rig
+
+The shading architecture here is modelled on a production anime rig
+(`_Yang_EV_Rig_Master.blend`, Blender 4.3, EEVEE). What was taken from it,
+and what deliberately was not:
+
+| Reference | Here |
+| --- | --- |
+| One `Yang_Shader` group instanced into ~24 materials | One `TOON-Core` group, same five-input interface, instanced into 9 |
+| Lit/Shaded colour pair per material | Same — `Lit` painted, `Shaded` painted or derived |
+| Per-material normal chain into the group's `Normal` | Same, fed by `textures/input/<piece>_normal.png` |
+| `Skin` and `Skin Body` as separate materials | `MAT-Skin` / `MAT-SkinBody`, two slots on one mesh |
+| Three suns (Body/Face/Hair) in three collections | Three region controls in a `Sunvec` bone collection — see below |
+| `Sunvec` bone collection steering the shading | Same name, same job |
+| 25 separate meshes, armature modifier only | 13 meshes; garments already separate objects |
+| Three armatures (BODY 584 / FACE 648 / PHYSICS 297 bones) | One armature, 97 bones |
+| Grease Pencil Line Art (3 objects) | not implemented |
+| Geometry-Nodes shadow casters (`Simple_Shadow_Gen_GN`, `Points_to_Shadow`) driven by 23 `_Pos` helper objects | not implemented — the bang shadow is a height band on `MAT-Skin` instead |
+| `Shader Info` node (half-lambert, cast/self shadows) | not available — it is a third-party node, absent from stock Blender; the equivalent term comes from Diffuse BSDF → Shader to RGB |
+
+**On the three suns.** The reference lights body, face and hair separately
+so each can be art-directed alone. The obvious way to reproduce that is
+Blender's light linking — but **EEVEE Next ignores it**. That was checked,
+not assumed: rendering one scene twice, once with the sun's receiver
+collection emptied, gives a mean pixel value of 0.7210 both times. So the
+separation is made in the materials instead, which is also where the
+reference's own `BASE_SunBody_Group` / `SunFace` / `SunHair` split lives.
+
+Note also that the reference file contains exactly **one** image texture
+(`Eye_Texture.png`) — the rest of that character is procedural colour. This
+project ships seven painted templates instead, and accepts hand-supplied
+maps on top of them.
 
 ---
 
@@ -173,6 +236,8 @@ back to their flat base colour.
 | Different hairstyle | the band functions in `hair.py` |
 | Different clothing cut | `SHIRT`, `PANTS`, `SHOE`, `GLOVE`, `CLOTH` in `config.py` |
 | Repaint a map by hand | edit `textures/generated/<name>.png`; the material reloads it |
+| Supply your own maps | drop `<piece>_color/_shaded/_normal/_shade.png` in `textures/input/` — see [textures/input/README.md](textures/input/README.md) |
+| Grade one region only | `SUN-body` / `SUN-face` / `SUN-hair` offsets |
 | Default shadow look | `SHADOW` in `config.py` |
 
 Re-run `build.py` after any change, then `tools/verify.py` to confirm the

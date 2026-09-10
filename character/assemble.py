@@ -69,8 +69,10 @@ def build_meshes(texture_dir=None):
     # -- body ----------------------------------------------------------
     body_md = BODY.build()
     ch.meshdata["body"] = body_md
+    # slot order must match config.SKIN_SLOT_BODY / SKIN_SLOT_FACE
     body_obj = BU.to_blender_object(body_md, C.OBJ["body"], coll,
-                                    [ch.materials["skin"]])
+                                    [ch.materials["skin_body"],
+                                     ch.materials["skin"]])
     BU.recalc_normals(body_obj)
     BU.weld(body_obj)
     # soften the ring where the arms bridge into the shoulder sockets

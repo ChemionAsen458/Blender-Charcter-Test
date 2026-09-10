@@ -37,6 +37,7 @@ OBJ = {
 
 MAT = {
     "skin":   f"{MAT_PREFIX}-Skin",
+    "skin_body": f"{MAT_PREFIX}-SkinBody",
     "hair":   f"{MAT_PREFIX}-Hair",
     "eyes":   f"{MAT_PREFIX}-Eyes",
     "mouth":  f"{MAT_PREFIX}-Mouth",
@@ -50,8 +51,38 @@ MAT = {
 # Texture template stem -> the material that consumes it.
 TEXTURE_SETS = ("skin", "hair", "eyes", "shirt", "pants", "shoes", "gloves")
 
+# --------------------------------------------------------------------------
+# Shading regions
+# --------------------------------------------------------------------------
+# The reference rig shades the body, the face and the hair through three
+# separate node groups fed by three separate suns, so each can be
+# art-directed without disturbing the other two -- a face that reads clean
+# while the body keeps its contrast is the whole point of an anime key.
+#
+# EEVEE Next ignores Blender's light-linking, so the split is made where
+# the reference makes it too: in the materials.  Each region gets its own
+# control bone and its own set of shading drivers.  That is also why the
+# skin is two materials -- `Skin` above the neck, `SkinBody` below it,
+# exactly as the reference splits `Skin` from `Skin Body`.
+REGIONS = {
+    "body": ("skin_body", "shirt", "pants", "shoes", "gloves"),
+    "face": ("skin", "mouth", "eyes"),
+    "hair": ("hair",),
+}
+
+# material slot indices on the base body mesh
+SKIN_SLOT_BODY = 0
+SKIN_SLOT_FACE = 1
+
 TEXTURE_SIZE = 2048
 TEXTURE_DIR = "textures/generated"
+
+# Hand-supplied maps live here and override the generated templates.
+# <piece>_color.png, _shaded.png, _normal.png, _shade.png -- see
+# textures/input/README.md.  Missing files fall back to a derived or
+# neutral default, so the build never depends on them.
+TEXTURE_INPUT_DIR = "textures/input"
+TEXTURE_SLOTS = ("color", "shaded", "normal", "shade")
 
 # --------------------------------------------------------------------------
 # Mesh resolution

@@ -397,6 +397,58 @@ def check_shadow_rig(res, rig, objects):
     ctrl["shadow_tint_r"] = 0.62
     _refresh(rig, *toon, *[m.node_tree for m in toon])
 
+    # each shading region must move on its own and stay off the others
+    from character import config as C
+    for region, bone_name in SHADOW.REGION_CTRL.items():
+        res.check(f"region control {region}", bone_name in rig.pose.bones,
+                  bone_name)
+    _reset(rig)
+    _refresh(rig, *toon, *[m.node_tree for m in toon])
+
+    def _threshold(mat_name):
+        mat = bpy.data.materials.get(mat_name)
+        if mat is None:
+            return None
+        node = MATS.toon_node(_eval(mat))
+        return next(s.default_value for s in node.inputs
+                    if s.name == MATS.IN_THRESHOLD)
+
+    probe = {"face": "MAT-Skin", "body": "MAT-SkinBody", "hair": "MAT-Hair"}
+    for region, mat_name in probe.items():
+        bone = rig.pose.bones[SHADOW.REGION_CTRL[region]]
+        others = {k: v for k, v in probe.items() if k != region}
+        before = {n: _threshold(n) for n in probe.values()}
+        bone["threshold_offset"] = 0.25
+        _refresh(rig, *toon, *[m.node_tree for m in toon])
+        after = {n: _threshold(n) for n in probe.values()}
+        moved = abs(after[mat_name] - before[mat_name] - 0.25) < 1e-3
+        held = all(abs(after[n] - before[n]) < 1e-4 for n in others.values())
+        res.check(f"{region} offset moves only {mat_name}", moved and held,
+                  f"{before[mat_name]:.2f} -> {after[mat_name]:.2f}, "
+                  f"others unchanged: {held}")
+        bone["threshold_offset"] = 0.0
+        _refresh(rig, *toon, *[m.node_tree for m in toon])
+
+    # the master must still move every region at once
+    ctrl["shadow_threshold"] = 0.65
+    _refresh(rig, *toon, *[m.node_tree for m in toon])
+    reads = [_threshold(n) for n in probe.values()]
+    res.check("master still moves every region",
+              all(abs(v - 0.65) < 1e-3 for v in reads),
+              f"min {min(reads):.3f} max {max(reads):.3f}")
+    ctrl["shadow_threshold"] = 0.50
+    _refresh(rig, *toon, *[m.node_tree for m in toon])
+
+    # the skin is split so face and body can be graded apart
+    body_obj = bpy.data.objects.get(C.OBJ["body"])
+    slots = [m.name for m in body_obj.data.materials] if body_obj else []
+    res.check("body carries face and body skin slots",
+              slots == [C.MAT["skin_body"], C.MAT["skin"]], ", ".join(slots))
+    if body_obj:
+        used = {p.material_index for p in body_obj.data.polygons}
+        res.check("both skin slots are actually used", used == {0, 1},
+                  f"slots in use: {sorted(used)}")
+
     # the face-shadow slider must move the band on the skin material
     skin = bpy.data.materials.get("MAT-Skin")
     band = skin.node_tree.nodes.get("FaceShadowBand") if skin else None
@@ -453,6 +505,7 @@ def check_shadow_rig(res, rig, objects):
 
 def check_textures(res):
     from character import config as C
+    from character import materials as MATS
     for name in C.TEXTURE_SETS:
         img = bpy.data.images.get(f"{name}.png")
         # size is (0, 0) until the buffer is actually paged in, which does
@@ -474,10 +527,36 @@ def check_textures(res):
     for mat_name, tex_name in mats.items():
         mat = bpy.data.materials.get(mat_name)
         node = mat.node_tree.nodes.get("BaseTexture") if mat else None
+        # a hand-supplied textures/input/<piece>_color.png legitimately
+        # replaces the generated template, so accept either
+        piece = tex_name[:-4]
+        supplied = MATS.input_texture_path(piece, "color")
+        want = {tex_name}
+        if supplied:
+            want.add(os.path.basename(supplied))
         ok = node is not None and node.image is not None \
-            and node.image.name == tex_name
+            and node.image.name in want
         res.check(f"{mat_name} uses {tex_name}", ok,
                   node.image.name if node and node.image else "missing")
+
+    # a supplied normal map must actually reach the group's Normal input
+    for piece in C.TEXTURE_SETS:
+        if MATS.input_texture_path(piece, "normal") is None:
+            continue
+        mat = bpy.data.materials.get(C.MAT.get(piece, ""))
+        if mat is None:
+            continue
+        nmap = mat.node_tree.nodes.get("NormalMap")
+        node = MATS.toon_node(mat)
+        # compare by name: bpy hands out a fresh wrapper per access, so
+        # `is` between two lookups of the same node is not reliable
+        linked = nmap is not None and any(
+            l.from_node.name == nmap.name
+            and l.to_socket.name == MATS.IN_NORMAL
+            for l in mat.node_tree.links)
+        strength = node.inputs[MATS.IN_NORMALS].default_value if node else 0
+        res.check(f"{piece} normal map wired", linked and strength > 0,
+                  f"Normals = {strength:.2f}")
 
 
 # ---------------------------------------------------------------------------

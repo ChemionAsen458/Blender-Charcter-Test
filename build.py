@@ -101,9 +101,16 @@ def say(args, message):
 
 
 def report(args, ch):
-    from character import blendutil as BU
+    from character import blendutil as BU, materials as MATS
     if args.quiet:
         return
+    supplied = MATS.supplied_map_report()
+    if supplied:
+        for piece, slots in sorted(supplied.items()):
+            print(f"[build]   input maps: {piece:8s} {', '.join(slots)}")
+    else:
+        print("[build]   input maps: none supplied, using generated "
+              "templates (see textures/input/README.md)")
     total = {"verts": 0, "faces": 0}
     for obj in sorted(ch.mesh_objects(), key=lambda o: o.name):
         stats = BU.mesh_stats(obj)

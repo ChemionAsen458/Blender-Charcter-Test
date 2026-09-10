@@ -195,6 +195,47 @@ you want fixed studio lights instead, re-parent `SHD-root` to nothing.
 | `key_energy`, `fill_energy` | Light levels, driven straight onto the lamps. |
 | `cast_softness` | Angular size of the key light in degrees — hard sun or overcast. |
 
+### `SUN-body`, `SUN-face`, `SUN-hair` — per-region grading
+
+`SHD-ctrl` moves the whole character at once, which is the right default
+and the wrong final answer: an anime key almost always wants the face
+reading cleaner than the body, and the hair harder than either.
+
+The reference rig solves this with three shader groups
+(`BASE_SunBody_Group`, `BASE_SunFace_Group`, `BASE_SunHair`) fed by three
+separate suns, steered from a `Sunvec` bone collection. Blender's own
+light-linking would be the obvious way to reproduce that — but **EEVEE
+Next ignores light linking** (verified by rendering the same scene with and
+without a receiver collection: identical). So the split is made where the
+reference makes it too, in the materials.
+
+Three bones in the `Sunvec` collection carry five offsets each:
+
+| Property | Effect |
+| --- | --- |
+| `threshold_offset` | Move this region's terminator away from the master. |
+| `softness_offset` | Soften or harden just this region's edge. |
+| `strength_offset` | Deepen or lift just this region's shadow. |
+| `rim_offset`, `spec_offset` | Rim and highlight, relative to the master. |
+
+They **offset**, they do not replace: each material's driver reads
+`master + offset`, so `SHD-ctrl` still grades everything in one gesture and
+the regions keep their relative separation as it moves.
+
+| Region | Materials |
+| --- | --- |
+| `SUN-body` | `MAT-SkinBody`, `MAT-Shirt`, `MAT-Pants`, `MAT-Shoes`, `MAT-Gloves` |
+| `SUN-face` | `MAT-Skin`, `MAT-Mouth`, `MAT-Eyes` |
+| `SUN-hair` | `MAT-Hair` |
+
+The skin being two materials is what makes the face row possible, and is
+exactly why the reference splits `Skin` from `Skin Body`. `CHR-Body` carries
+both in slots 0 and 1; the head loft and the crown cap go into slot 1, the
+rest into slot 0, so the split costs no extra geometry.
+
+Everything defaults to `0.0` — out of the box the character looks exactly
+as it did before, and the regions only diverge once you dial one.
+
 ### `SHD-face` — the bang shadow
 
 Anime characters carry a shadow where the fringe falls across the forehead,
