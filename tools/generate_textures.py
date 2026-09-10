@@ -231,13 +231,18 @@ def build_skin(size, meshes):
         # V runs from the outer edge (on the face) to the free lash edge
         r.gradient(shade(P["skin"], 0.88), shade(P["skin"], 1.02),
                    vertical=True)
-        lash_v0 = 0.80 if upper else 0.74
-        r.box(0.0, lash_v0, 1.0, 1.0, mix(P["skin_deep"], P["hair_shadow"],
-                                          0.55), alpha=0.85)
-        r.box(0.0, 0.94, 1.0, 1.0, P["hair_shadow"], alpha=0.95)
+        # the upper lash line is the graphic element; the lower lid only
+        # needs a hint, or it reads as an eye bag
         if upper:
-            # thicken the lash line toward the outer corner
-            r.bar(0.80, 0.90, 0.42, 0.10, 0.0, P["hair_shadow"], alpha=0.8)
+            r.box(0.0, 0.78, 1.0, 1.0, mix(P["skin_deep"], P["hair_shadow"],
+                                           0.60), alpha=0.85)
+            r.box(0.0, 0.90, 1.0, 1.0, P["hair_shadow"], alpha=0.95)
+            r.bar(0.80, 0.86, 0.42, 0.12, 0.0, P["hair_shadow"], alpha=0.8)
+        else:
+            r.box(0.0, 0.86, 1.0, 1.0, mix(P["skin"], P["skin_shadow"], 0.75),
+                  alpha=0.7)
+            r.box(0.0, 0.95, 1.0, 1.0, mix(P["skin_shadow"], P["skin_deep"],
+                                           0.6), alpha=0.8)
     reg["face"].fill(shade(P["skin"], 0.97))
     return c
 
@@ -249,11 +254,13 @@ def _mouth_pixel(lu, lv, inside, tt):
     """
     if not inside:
         return None
-    if 0.40 < tt < 0.60:
-        return mix(P["skin_deep"], P["mouth_inner"], 0.55)
-    if tt >= 0.60:
-        return mix(P["lip"], P["skin"], (tt - 0.60) / 0.40 * 0.65)
-    return mix(P["lip"], P["skin"], (0.40 - tt) / 0.40 * 0.55)
+    if 0.30 < tt < 0.70:
+        # the lip line has to be dark enough to read against tan skin at
+        # the size an anime mouth is actually drawn
+        return mix(P["mouth_inner"], (0.14, 0.07, 0.07), 0.45)
+    if tt >= 0.70:
+        return mix(P["lip"], P["skin"], (tt - 0.70) / 0.30 * 0.70)
+    return mix(P["lip"], P["skin"], (0.30 - tt) / 0.30 * 0.60)
 
 
 def _paint_lens(region, half_top, half_bot, colour_fn, **kw):
@@ -295,8 +302,8 @@ def build_hair(size, meshes):
     cap.fill(P["hair"])
     cap.gradient(P["hair_light"], P["hair_shadow"])
     # the classic anime highlight band around the crown
-    cap.box(0.0, 0.62, 1.0, 0.74, P["hair_light"], alpha=0.55)
-    cap.box(0.0, 0.655, 1.0, 0.705, P["hair_rim"], alpha=0.55)
+    cap.box(0.0, 0.62, 1.0, 0.74, P["hair_light"], alpha=0.32)
+    cap.box(0.0, 0.655, 1.0, 0.705, P["hair_rim"], alpha=0.30)
     for i in range(80):
         u = rng.uniform(0.0, 1.0)
         w = rng.uniform(0.004, 0.016)
@@ -307,8 +314,8 @@ def build_hair(size, meshes):
     strand.fill(P["hair"])
     strand.gradient(P["hair_light"], P["hair_shadow"])
     strand.box(0.0, 0.0, 1.0, 0.16, P["hair_shadow"], alpha=0.75)
-    strand.box(0.0, 0.40, 1.0, 0.56, P["hair_light"], alpha=0.60)
-    strand.box(0.0, 0.455, 1.0, 0.515, P["hair_rim"], alpha=0.50)
+    strand.box(0.0, 0.38, 1.0, 0.58, P["hair_light"], alpha=0.34)
+    strand.box(0.0, 0.44, 1.0, 0.52, P["hair_rim"], alpha=0.30)
     strand.box(0.0, 0.90, 1.0, 1.0, shade(P["hair_light"], 1.10), alpha=0.55)
     for i in range(140):
         u = rng.uniform(0.0, 1.0)

@@ -1,10 +1,14 @@
 # Kaito — procedural anime character for Blender
 
-A complete, rigged, cel-shaded anime character generated from code. Running
-one command produces a `.blend` containing a smooth subdivision-surface
-body, separate clothing pieces, seven hand-painted-style texture templates,
-a full-body IK skeleton, a face rig that shifts the eyebrows, eyelids and
-mouth, and a dedicated **shadow rig** for art-directing the cel shading.
+A complete, rigged, cel-shaded anime character generated from code. The
+built file — `kaito.blend` in the repository root — contains a smooth
+subdivision-surface body, separate clothing pieces, seven texture
+templates, a full-body IK skeleton, a face rig that shifts the eyebrows,
+eyelids and mouth, and a dedicated **shadow rig** for art-directing the cel
+shading. Open it in Blender 4.2+ and it is ready to pose; its textures are
+packed, so nothing else is needed.
+
+To rebuild it from source:
 
 ```
 python3 build.py --out build/kaito.blend      # if the `bpy` module is installed
@@ -21,6 +25,8 @@ python3 -m tools.showcase --blend build/kaito.blend    # preview sheets
 Everything is regenerated from `character/config.py`, so the character can
 be re-proportioned, recoloured or re-textured by editing numbers rather
 than by re-modelling.
+
+![Turnaround](docs/images/turnaround.png)
 
 ---
 
@@ -124,6 +130,9 @@ docs/
   RIGGING.md             every control, what it does, how to animate it
   TEXTURES.md            the UV atlas and how to repaint each map
   PIPELINE.md            how the generator works and how to change it
+  images/                turnaround, expressions and shadow-rig sheets
+kaito.blend              the built character, textures packed
+textures/generated/      the seven templates plus their _guide overlays
 ```
 
 `tools/` has **no third-party dependencies** — the texture generator writes

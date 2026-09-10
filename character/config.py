@@ -250,8 +250,8 @@ BROW = {
 MOUTH = {
     "z": Z["mouth"] - 0.006,
     "y": -0.088,
-    "width": 0.0210,      # half width
-    "height": 0.0034,     # half height of the neutral lip line
+    "width": 0.0245,      # half width
+    "height": 0.0052,     # half height of the neutral lip line
 }
 
 # --------------------------------------------------------------------------

@@ -33,7 +33,7 @@ EYE_HALF_BOT = 0.0150
 EYE_OFFSET = 0.0012          # eye shell sits just proud of the socket
 EYE_BULGE = 0.0055           # corneal bulge, so the iris catches light
 LID_OFFSET = 0.0026          # lids ride outside the eye shell
-LID_REST_OPEN = 0.90         # 1 = fully open, 0 = closed onto the lower lid
+LID_REST_OPEN = 0.965        # 1 = fully open, 0 = closed onto the lower lid
 
 
 # ---------------------------------------------------------------------------
@@ -138,10 +138,10 @@ def _lid_verts(sampler, cx, cz, open_t, upper=True, squeeze=0.0):
     for u in _u_values():
         lo, hi = lens(u, EYE_HALF_TOP, EYE_HALF_BOT, peak_shift=-0.10)
         if upper:
-            outer = hi + 0.0105 * (1.0 - 0.35 * abs(u))
+            outer = hi + 0.0072 * (1.0 - 0.35 * abs(u))
             edge = lerp(lo, hi, open_t)
         else:
-            outer = lo - 0.0080 * (1.0 - 0.30 * abs(u))
+            outer = lo - 0.0052 * (1.0 - 0.30 * abs(u))
             edge = lerp(lo, hi, open_t)
         for i in range(NV):
             t = i / (NV - 1)
@@ -168,7 +168,7 @@ def build_eyelid(sampler, side="L", upper=True):
     mesh.mark("lid." + side, idx)
 
     # closed enough to overlap the other lid slightly, so a blink seals
-    closed = 0.10 if upper else 0.16
+    closed = 0.08 if upper else 0.14
     shapes = {
         "blink": _lid_verts(sampler, cx, eye["z"], closed, upper),
         "wide": _lid_verts(sampler, cx, eye["z"],

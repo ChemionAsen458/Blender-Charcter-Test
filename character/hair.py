@@ -161,11 +161,11 @@ def _clump(mesh, theta, z, flow, length, width, out=0.28,
 
 def _bangs(mesh, rng):
     """Pointed fringe falling forward over the forehead, down to the brows."""
-    for k in range(17):
-        u = -1.0 + 2.0 * k / 16.0
-        theta = u * math.radians(88.0)
-        z = 1.700 - 0.012 * abs(u) + rng.uniform(-0.007, 0.007)
-        length = rng.uniform(0.050, 0.074) * (1.0 - 0.10 * abs(u))
+    for k in range(23):
+        u = -1.0 + 2.0 * k / 22.0
+        theta = u * math.radians(90.0)
+        z = 1.700 - 0.012 * abs(u) + rng.uniform(-0.009, 0.009)
+        length = rng.uniform(0.044, 0.066) * (1.0 - 0.10 * abs(u))
         _clump(mesh, theta, z,
                (0.34 * u + rng.uniform(-0.12, 0.12), -0.28, -0.92),
                length, rng.uniform(0.026, 0.042), out=0.16,
@@ -173,8 +173,9 @@ def _bangs(mesh, rng):
                tip_amount=rng.uniform(0.80, 1.05), thickness=0.44,
                twist=rng.uniform(-0.35, 0.35))
     # a few longer pieces crossing the brow, as on the reference sheet
-    for (u, ln, w) in ((-0.34, 0.086, 0.028), (0.20, 0.090, 0.024),
-                       (0.58, 0.078, 0.026)):
+    for (u, ln, w) in ((-0.62, 0.072, 0.026), (-0.34, 0.078, 0.028),
+                       (-0.06, 0.082, 0.025), (0.20, 0.080, 0.024),
+                       (0.46, 0.076, 0.027), (0.70, 0.068, 0.025)):
         _clump(mesh, u * math.radians(82.0), 1.708,
                (0.44 * u, -0.34, -0.88), ln, w, out=0.10,
                tip_dir=(0.10 * u, 0.40, -0.92), tip_amount=1.05,

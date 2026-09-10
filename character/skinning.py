@@ -40,6 +40,13 @@ FINGER_REACH = 0.022
 DEFAULT_REACH = 0.12
 
 
+# Bones that must not take part in automatic weighting of the body or the
+# clothing.  The eyeballs sit *inside* the skull, so any distance-based
+# scheme hands them a patch of face; the face shells are bound rigidly
+# instead and never need a weight painted on the skin.
+AUTO_WEIGHT_EXCLUDE = ("eye.L", "eye.R")
+
+
 def _reach(name):
     base = name.rsplit(".", 1)[0] if name.endswith((".L", ".R")) else name
     if base in BONE_REACH:
@@ -77,11 +84,11 @@ def _smoothstep(e0, e1, x):
     return t * t * (3.0 - 2.0 * t)
 
 
-def collect_bone_segments(rig):
+def collect_bone_segments(rig, exclude=()):
     """(name, head, tail, reach, side) for every deform bone, in rest pose."""
     segs = []
     for bone in rig.data.bones:
-        if not bone.use_deform:
+        if not bone.use_deform or bone.name in exclude:
             continue
         segs.append((bone.name, bone.head_local.copy(), bone.tail_local.copy(),
                      _reach(bone.name),
@@ -97,12 +104,20 @@ def auto_weight(obj, rig, segments=None, max_influences=4, power=3.0,
     that is how islands the heat solver could not reach get filled in
     without discarding the good weights it produced everywhere else.
     """
-    segments = segments or collect_bone_segments(rig)
+    segments = segments or collect_bone_segments(rig, AUTO_WEIGHT_EXCLUDE)
     if indices is None:
         obj.vertex_groups.clear()
-    groups = {name: (obj.vertex_groups.get(name)
-                     or obj.vertex_groups.new(name=name))
-              for (name, _, _, _, _) in segments}
+
+    groups = {}
+
+    def group(name):
+        # created on demand, so a top-up pass does not litter the mesh with
+        # empty groups for every bone in the rig
+        g = groups.get(name)
+        if g is None:
+            g = obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)
+            groups[name] = g
+        return g
 
     mw = obj.matrix_world
     todo = (obj.data.vertices if indices is None
@@ -127,13 +142,13 @@ def auto_weight(obj, rig, segments=None, max_influences=4, power=3.0,
             # fall back to the single closest bone so nothing is left loose
             best = min(segments,
                        key=lambda s: _point_segment_distance(p, s[1], s[2]))
-            groups[best[0]].add([v.index], 1.0, 'REPLACE')
+            group(best[0]).add([v.index], 1.0, 'REPLACE')
             continue
         scored.sort(reverse=True)
         scored = scored[:max_influences]
         total = sum(w for (w, _) in scored)
         for (w, name) in scored:
-            groups[name].add([v.index], w / total, 'REPLACE')
+            group(name).add([v.index], w / total, 'REPLACE')
     return groups
 
 
@@ -151,13 +166,6 @@ def blend_weight(obj, weights):
     idx = [v.index for v in obj.data.vertices]
     for name, w in weights.items():
         obj.vertex_groups.new(name=name).add(idx, w, 'REPLACE')
-
-
-# Bones that must not take part in automatic weighting of the body or the
-# clothing.  The eyeballs sit *inside* the skull, so any distance-based
-# scheme hands them a patch of face; the face shells are bound rigidly
-# instead and never need a weight painted on the skin.
-AUTO_WEIGHT_EXCLUDE = ("eye.L", "eye.R")
 
 
 def heat_weight(obj, rig, exclude=AUTO_WEIGHT_EXCLUDE):
