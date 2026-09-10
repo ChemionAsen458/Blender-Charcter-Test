@@ -18,7 +18,7 @@ blender --background --python build.py -- --out build/kaito.blend
 Then check it actually works:
 
 ```
-python3 -m tools.verify --blend build/kaito.blend      # 97 rig checks
+python3 -m tools.verify --blend build/kaito.blend      # 96 rig checks
 python3 -m tools.showcase --blend build/kaito.blend    # preview sheets
 ```
 
@@ -39,6 +39,12 @@ key from behind, warm and soft, and the fringe shadow dropped down the
 face:
 
 ![Shadow rig](docs/images/shadow_rig.png)
+
+Per-region grading. Same pose, same `SHD-ctrl`; only one region control
+moves between frames — uniform, the face lifted, the hair hardened, the
+body deepened:
+
+![Region grading](docs/images/regions.png)
 
 ---
 
@@ -199,8 +205,8 @@ tools/
   png.py                 stdlib PNG read/write
   uvprobe.py             "where on the texture is this point on the model?"
   preview.py             orthographic turnaround renders
-  showcase.py            turnaround / expression / shadow / pose sheets
-  verify.py              73 checks that the rig actually responds
+  showcase.py            turnaround / expression / shadow / region / pose sheets
+  verify.py              96 checks that the rig actually responds
 docs/
   RIGGING.md             every control, what it does, how to animate it
   TEXTURES.md            the UV atlas and how to repaint each map

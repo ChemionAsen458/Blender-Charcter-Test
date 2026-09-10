@@ -27,12 +27,49 @@ def _rig():
     return bpy.data.objects.get(C.RIG_NAME)
 
 
+# Custom-property values as the rig was built, captured before the first
+# sheet is rendered.  Resetting only the transforms is not enough: every
+# look here is a set of *properties*, so without restoring them each frame
+# inherits the previous one's grade and the sheet stops being a comparison.
+_BASELINE = {}
+
+
+def _snapshot(rig):
+    """Remember every pose-bone custom property at its build-time value."""
+    _BASELINE.clear()
+    for pb in rig.pose.bones:
+        props = {}
+        for key in pb.keys():
+            if key.startswith("_"):
+                continue
+            value = pb[key]
+            # IDPropertyArray does not survive a plain reference
+            props[key] = list(value) if hasattr(value, "__len__") \
+                and not isinstance(value, str) else value
+        if props:
+            _BASELINE[pb.name] = props
+    return _BASELINE
+
+
 def _reset(rig):
     for pb in rig.pose.bones:
         pb.location = (0, 0, 0)
         pb.rotation_euler = (0, 0, 0)
         pb.rotation_quaternion = (1, 0, 0, 0)
         pb.scale = (1, 1, 1)
+    for name, props in _BASELINE.items():
+        pb = rig.pose.bones.get(name)
+        if pb is None:
+            continue
+        for key, value in props.items():
+            try:
+                pb[key] = value
+            except (TypeError, KeyError):
+                pass
+    rig.update_tag()
+    for mat in bpy.data.materials:
+        if mat.node_tree is not None:
+            mat.node_tree.update_tag()
     bpy.context.evaluated_depsgraph_get().update()
 
 
@@ -50,6 +87,9 @@ def _apply(rig, pose):
             else:
                 pb[key] = value
     rig.update_tag()
+    for mat in bpy.data.materials:
+        if mat.node_tree is not None:
+            mat.node_tree.update_tag()
     bpy.context.evaluated_depsgraph_get().update()
 
 
@@ -115,6 +155,19 @@ SHADOW_LOOKS = {
                                "shadow_threshold": 0.42}},
     "bang_shadow": {"SHD-face": {"loc": (0, 0, 0.055)},
                     "SHD-ctrl": {"face_shadow_softness": 0.06}},
+}
+
+# Per-region grading: the same pose and the same master control, with only
+# one region's offsets moved.  Framed on the head and shoulders because
+# that is where face-versus-body separation actually reads.
+REGION_LOOKS = {
+    "uniform": {},
+    "face_lifted": {"SUN-face": {"threshold_offset": -0.22,
+                                 "softness_offset": 0.05}},
+    "hair_hard": {"SUN-hair": {"threshold_offset": 0.18,
+                               "softness_offset": -0.035}},
+    "body_deep": {"SUN-body": {"threshold_offset": 0.22,
+                               "strength_offset": 0.12}},
 }
 
 POSES = {
@@ -184,6 +237,29 @@ def render_shadow_looks(out_dir, rig, size=440, samples=40):
                                  os.path.join(out_dir, "shadow_rig.png"))
 
 
+def render_regions(out_dir, rig, size=440, samples=40):
+    """One frame per region look, framed on the head and shoulders.
+
+    `SHD-ctrl` is untouched across the whole sheet -- only a single region
+    control moves between frames, so any difference is that region alone.
+    """
+    paths = []
+    for name, pose in REGION_LOOKS.items():
+        _reset(rig)
+        _apply(rig, pose)
+        height = int(size * 1.15)
+        preview.setup_render(width=size, height=height, samples=samples)
+        p = preview.render_views(out_dir, views=("three_q",),
+                                 prefix=f"region_{name}", width=size,
+                                 height=height, focus=Vector((0, 0, 1.50)),
+                                 ortho_scale=0.52, objects=_meshes(),
+                                 samples=samples)
+        paths.extend(p)
+    _reset(rig)
+    return preview.contact_sheet(paths,
+                                 os.path.join(out_dir, "regions.png"))
+
+
 def render_poses(out_dir, rig, size=(560, 1000), samples=40):
     paths = []
     for name, pose in POSES.items():
@@ -209,13 +285,16 @@ def main(argv=None):
     ap.add_argument("--out", default=os.path.join(HERE, "build", "preview"))
     ap.add_argument("--samples", type=int, default=40)
     ap.add_argument("--only", nargs="*",
-                    choices=("turnaround", "expressions", "shadow", "poses"))
+                    choices=("turnaround", "expressions", "shadow", "regions",
+                             "poses"))
     args = ap.parse_args(argv)
 
     bpy.ops.wm.open_mainfile(filepath=args.blend)
     os.makedirs(args.out, exist_ok=True)
     rig = _rig()
-    want = args.only or ("turnaround", "expressions", "shadow", "poses")
+    _snapshot(rig)
+    want = args.only or ("turnaround", "expressions", "shadow", "regions",
+                         "poses")
     written = []
     if "turnaround" in want:
         written.append(render_turnaround(args.out, samples=args.samples))
@@ -224,6 +303,8 @@ def main(argv=None):
     if "shadow" in want:
         written.append(render_shadow_looks(args.out, rig,
                                            samples=args.samples))
+    if "regions" in want:
+        written.append(render_regions(args.out, rig, samples=args.samples))
     if "poses" in want:
         written.append(render_poses(args.out, rig, samples=args.samples))
     for path in written:

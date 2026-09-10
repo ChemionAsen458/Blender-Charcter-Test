@@ -197,6 +197,13 @@ you want fixed studio lights instead, re-parent `SHD-root` to nothing.
 
 ### `SUN-body`, `SUN-face`, `SUN-hair` — per-region grading
 
+![Region grading](images/regions.png)
+
+Same pose, same `SHD-ctrl` across all four frames; only one region control
+moves. Left to right: uniform, `SUN-face` lifted, `SUN-hair` hardened,
+`SUN-body` deepened. Render it yourself with
+`python3 -m tools.showcase --only regions`.
+
 `SHD-ctrl` moves the whole character at once, which is the right default
 and the wrong final answer: an anime key almost always wants the face
 reading cleaner than the body, and the hair harder than either.
@@ -280,10 +287,12 @@ unweighted, and that each has exactly one armature modifier.
 
 ## Verifying changes
 
-`python3 -m tools.verify --blend build/kaito.blend` runs 86 checks that
+`python3 -m tools.verify --blend build/kaito.blend` runs 96 checks that
 *pose* the rig and measure the response — IK moves the foot 12 cm, the
-blink slider closes the eye, `SHD-ctrl` retints all eight toon materials,
-`SHD-key` turns the lamp 60°. If you change the rig, run it. Failures print
+blink slider closes the eye, `SHD-ctrl` retints all nine toon materials,
+`SUN-face` moves the face and leaves the body alone, `SHD-key` turns the
+lamp 60°. One more check runs per supplied input map, confirming it
+actually reaches the shader. If you change the rig, run it. Failures print
 the measured number, so they can be diagnosed without opening Blender.
 
 The checks worth understanding are the **rest-pose** ones. Constraints are
