@@ -124,12 +124,6 @@ def build_toon_group():
     links.new(gin.outputs[IN_TINT], shadow_col.inputs['Color2'])
 
     # how far toward the shadow colour the dark side goes
-    lit_mask = nodes.new('ShaderNodeMath')
-    lit_mask.operation = 'MULTIPLY_ADD'
-    lit_mask.location = (-180, 160)
-    lit_mask.inputs[1].default_value = 1.0
-    links.new(ramp.outputs['Result'], lit_mask.inputs[0])
-
     inv = nodes.new('ShaderNodeMath')
     inv.operation = 'SUBTRACT'
     inv.location = (-180, 20)
